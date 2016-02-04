@@ -523,20 +523,25 @@ def levelHandler(evt){
     def v = evt.value.toFloat().round(0).toInteger()
     def t = evt.date.getTime()
     if (ventData != null){
-        //new
+        //request
         if (evt.description == ""){
 			ventData.voRequest = v	
             ventData.voRequestTS = t	
-            //ventData.voActualTS = null
-            //ventData.voTTC = null
-        } else {
+		//response
+		} else {
         	ventData.voResponse = v
             ventData.voResponseTS = t
             ventData.voTTC = ((t - ventData.voRequestTS) / 1000).toFloat().round(1)
         }
         state."${evt.deviceId}" = ventData
     } else {
-    	state."${evt.deviceId}" =  [voRequest:"${v}",voRequestTS:t,voResponse:"${v}",voResponseTS:t,voTTC:null] 
+    	//request
+    	if (evt.description == ""){
+    		state."${evt.deviceId}" =  [voRequest:"${v}",voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+        //response
+        } else {
+        	state."${evt.deviceId}" =  [voRequest:null,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+        }
     }
     
     logger(40,"debug","levelHandler:exit- ")
