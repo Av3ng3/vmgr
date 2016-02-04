@@ -1,5 +1,7 @@
 /**
- *  kvChild 0.1.5a
+ *  kvChild 0.1.5b
+ 	
+    0.1.5b	changed disable function to immediate when zone is running
  	0.1.5a	patch null error on end report creation, before there is an end report...	
  	0.1.5	pulled pressure polling, as it has proven worthless
     		added quick recovery
@@ -68,7 +70,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5a"
+	state.vChild = "0.1.5b"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -192,7 +194,6 @@ def main(){
                 }
             	input(
             		name			: "ventCloseWait"
-                	//,title			: "Close vents at cycle completion?"
                     ,title			: froTitle
                 	,multiple		: false
                 	,required		: true
@@ -309,7 +310,7 @@ def zoneEvaluate(params){
     	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal} mainQuickLocal:${mainQuickLocal}"
     }
  	//zone states    
-    def zoneDisablePendingLocal = state.zoneDisablePending ?: false
+    //def zoneDisablePendingLocal = state.zoneDisablePending ?: false
 	def zoneDisabledLocal = state.zoneDisabled ?: false
     def runningLocal
     
@@ -373,7 +374,7 @@ def zoneEvaluate(params){
                         
                     //system shut down
                     } else if (!data.mainOn){
-                    	zoneDisablePendingLocal = false
+                    	//zoneDisablePendingLocal = false
                     	runningLocal = false
                         def asp
                         def d
@@ -426,7 +427,8 @@ def zoneEvaluate(params){
         		//data:["tempChange"]
         		//logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
                 //process changes if zone is not disabled
-                if (!zoneDisabledLocal || zoneDisablePendingLocal){
+                //if (!zoneDisabledLocal || zoneDisablePendingLocal){
+                if (!zoneDisabledLocal){
                 	logger(30,"debug","zoneEvaluate- zone temperature changed, zoneTemp: ${zoneTempLocal}")
                 	evaluateVents = true
                 } else {
@@ -440,16 +442,25 @@ def zoneEvaluate(params){
         case "zoneSwitch" :
         		//[msg:"zoneSwitch", data:[zoneIsEnabled:true|false]]
                 //fire up zone since it was activated
+                if (data.zoneIsEnabled){
+                	evaluateVents = true
+                } else {
+                	runningLocal = false
+                }
+                /*
                 if (mainOnLocal && data.zoneIsEnabled){
                 	logger(30,"debug","zoneEvaluate- zone was enabled, data: ${data}")
+                    //logger(10,"warn", "Vents closed via close vents option")
                 	evaluateVents = true
                 //zone is active, zone switch went inactive
                 } else if (mainOnLocal && !data.zoneIsEnabled) {
                 	zoneDisabledLocal = true
-                    zoneDisablePendingLocal = true
+                    //zoneDisablePendingLocal = true
+                    runningLocal = false
                 } else {
                 	logger(30,"warn","zoneEvaluate- ${msg}, no matching events, data: ${data}")
                 }
+                */
         	break
         case "pressure" :
         		logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
@@ -555,7 +566,15 @@ def levelHandler(evt){
 
 def zoneDisableHandeler(evt){
     logger(30,"debug","zoneDisableHandeler- evt name: ${evt.name}, value: ${evt.value}")
-    if (evt.isStateChange()) zoneEvaluate([msg:"zoneSwitch", data:[zoneIsEnabled:(evt.value == "on" )]])
+    if (evt.isStateChange()){
+    	def zoneIsEnabled = evt.value == "on"
+        if (zoneIsEnabled){
+        	logger(10,"warn", "Zone was enabled via: [${zoneControlSwitch.displayName}]")
+        } else {
+        	logger(10,"warn", "Zone was disabled via: [${zoneControlSwitch.displayName}]")
+        }
+        zoneEvaluate([msg:"zoneSwitch", data:[zoneIsEnabled:zoneIsEnabled]])
+    }
 }
 
 def tempHandler(evt){
@@ -880,7 +899,7 @@ def getZoneState(){
     def s 
     if (state.running == true) s = true
     else s = false
-    def report =  "\n\trunning: ${s}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}\n\trunning: ${s}"
+    def report =  "\n\trunning: ${s}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}"
     vents.each{ vent ->
  		def b = vent.currentValue("battery")
         def l = vent.currentValue("level").toInteger()
