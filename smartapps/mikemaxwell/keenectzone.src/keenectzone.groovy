@@ -1,6 +1,6 @@
 /**
- *  kvChild 0.1.5
- 
+ *  kvChild 0.1.5a
+ 	0.1.5a	patch null error on end report creation, before there is an end report...	
  	0.1.5	pulled pressure polling, as it has proven worthless
     		added quick recovery
     0.1.4	fixed null race condition when adding new zone.        
@@ -68,7 +68,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5"
+	state.vChild = "0.1.5a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -375,10 +375,16 @@ def zoneEvaluate(params){
                     } else if (!data.mainOn){
                     	zoneDisablePendingLocal = false
                     	runningLocal = false
-                        
-                       	def asp = state.activeSetPoint
-                        def d = (zoneTempLocal - asp).toFloat()
-                        d = d.round(1)
+                        def asp
+                        def d
+                        if (zoneTempLocal && asp){
+                        	asp = state.activeSetPoint
+                            d = (zoneTempLocal - asp).toFloat()
+                            d = d.round(1)
+                        }
+                       	//def asp = state.activeSetPoint
+                        //def d = (zoneTempLocal - asp).toFloat()
+                        //d = d.round(1)
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"        
                     	logger(10,"info","Main HVAC has shut down.")                        
                         
