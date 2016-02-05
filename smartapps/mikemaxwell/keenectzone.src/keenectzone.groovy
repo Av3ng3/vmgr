@@ -1,6 +1,9 @@
 /**
- *  kvChild 0.1.5c
- 	
+ *  kvChild 0.1.5d
+ 
+ 	0.1.5d	changed error log in eval to info and "nothing to do...", since it's not really an error
+    		fixed zone remaining disabled when zone switch is removed as a configuration option
+            fixed zone disable in general
     0.1.5c	fixed end report not generating correctly
     0.1.5b	changed disable function to immediate when zone is running
  	0.1.5a	patch null error on end report creation, before there is an end report...	
@@ -71,12 +74,13 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5c"
+	state.vChild = "0.1.5d"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
+    if (!zoneControlSwitch) state.zoneDisabled = false
     zoneEvaluate(parent.notifyZone())
 }
 
@@ -447,28 +451,15 @@ def zoneEvaluate(params){
         		//[msg:"zoneSwitch", data:[zoneIsEnabled:true|false]]
                 //fire up zone since it was activated
                 if (data.zoneIsEnabled){
+                	zoneDisabledLocal = false
                 	evaluateVents = true
                 } else {
+                	zoneDisabledLocal = true
                 	runningLocal = false
                 }
-                /*
-                if (mainOnLocal && data.zoneIsEnabled){
-                	logger(30,"debug","zoneEvaluate- zone was enabled, data: ${data}")
-                    //logger(10,"warn", "Vents closed via close vents option")
-                	evaluateVents = true
-                //zone is active, zone switch went inactive
-                } else if (mainOnLocal && !data.zoneIsEnabled) {
-                	zoneDisabledLocal = true
-                    //zoneDisablePendingLocal = true
-                    runningLocal = false
-                } else {
-                	logger(30,"warn","zoneEvaluate- ${msg}, no matching events, data: ${data}")
-                }
-                */
         	break
         case "pressure" :
         		logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
-                
         	break
         //no longer used???...
         case "self" :
@@ -480,7 +471,6 @@ def zoneEvaluate(params){
                 	evaluateVents = true
                 }
         	break
-            
     }    
     
     //always check for main quick
@@ -497,7 +487,7 @@ def zoneEvaluate(params){
     state.zoneHSP = zoneHSPLocal
     state.zoneTemp = zoneTempLocal
     state.mainQuick = mainQuickLocal
-    state.zoneDisablePending = zoneDisablePendingLocal
+    //state.zoneDisablePending = zoneDisablePendingLocal
 	state.zoneDisabled = zoneDisabledLocal
   
     if (evaluateVents){
@@ -525,7 +515,7 @@ def zoneEvaluate(params){
                 runningLocal = true
            	}                        
       	} else {
-            logger(10,"error","zoneEvaluate- evaluateVents, mainState: ${mainStateLocal}, zoneTemp: ${zoneTempLocal}, zoneHSP: ${zoneHSPLocal}, zoneCSP: ${zoneCSPLocal}")
+            logger(10,"info","Nothing to do main HVAC is not running, mainState: ${mainStateLocal}, zoneTemp: ${zoneTempLocal}, zoneHSP: ${zoneHSPLocal}, zoneCSP: ${zoneCSPLocal}")
        	}
     }
     //write state
