@@ -1,6 +1,7 @@
 /**
- *  kvChild 0.1.5b
+ *  kvChild 0.1.5c
  	
+    0.1.5c	fixed end report not generating correctly
     0.1.5b	changed disable function to immediate when zone is running
  	0.1.5a	patch null error on end report creation, before there is an end report...	
  	0.1.5	pulled pressure polling, as it has proven worthless
@@ -70,20 +71,19 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5b"
+	state.vChild = "0.1.5c"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
-    
     zoneEvaluate(parent.notifyZone())
 }
 
 //dynamic page methods
 def main(){
+	state.etf = parent.getID()
 	def installed = app.installationState == "COMPLETE"
-    def vcNotMet = ventCountNotMet()
 	return dynamicPage(
     	name		: "main"
         ,title		: "Zone Configuration"
@@ -108,22 +108,6 @@ def main(){
                     ,type			: "capability.switchLevel"
                     ,submitOnChange	: true
 				)
-				/*
-				if (vents){
-  					//spin through sizing selections
-                    vents.each{ vent ->
-                        input(
-            				name			: vent.id
-                			,title			: vent.displayName + " size:"
-                			,multiple		: false
-                			,required		: true
-                			,type			: "enum"
-                    		,submitOnChange	: false
-                            ,options		: [["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
-            			) 
-                    }
-                }
-                */
  				input(
             		name		: "tempSensors"
                 	,title		: "Temp Sensors:"
@@ -185,6 +169,7 @@ def main(){
                     ,submitOnChange	: false
             	)
             }
+
             section("Options"){
                 def froTitle = 'Close vents at cycle end is '
                 if (!ventCloseWait || ventCloseWait == "-1"){
@@ -223,6 +208,24 @@ def main(){
 					,state			: null
 				)
             }
+            if (state.etf){
+            	section("Vent sizes"){
+					if (vents){
+  						//spin through sizing selections
+                    	vents.each{ vent ->
+                        	input(
+            					name			: vent.id
+                				,title			: vent.displayName + " size:"
+                				,multiple		: false
+                				,required		: true
+                				,type			: "enum"
+                    			,submitOnChange	: false
+                            	,options		: [["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
+            				) 
+                    	}
+                	}            
+            	}
+            }                
 	}
 }
 
@@ -376,10 +379,9 @@ def zoneEvaluate(params){
                     } else if (!data.mainOn){
                     	//zoneDisablePendingLocal = false
                     	runningLocal = false
-                        def asp
+                        def asp = state.activeSetPoint
                         def d
                         if (zoneTempLocal && asp){
-                        	asp = state.activeSetPoint
                             d = (zoneTempLocal - asp).toFloat()
                             d = d.round(1)
                         }
@@ -410,8 +412,9 @@ def zoneEvaluate(params){
                 	if (data.mainQuick) logger(10,"info","Main HVAC entered quick recovery mode.")
                     else logger(10,"info","Main HVAC exited quick recovery mode.")
                     evaluateVents = true
-   				}
- 				//log.warn "data.mainQuickChange:${data.mainQuickChange} data.mainQuick:${data.mainQuick} settings.quickRecovery:${settings.quickRecovery}"
+   				} else {
+                	logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
+                }
                 
                 //always update data
                 mainStateLocal = data.mainState
@@ -432,7 +435,8 @@ def zoneEvaluate(params){
                 	logger(30,"debug","zoneEvaluate- zone temperature changed, zoneTemp: ${zoneTempLocal}")
                 	evaluateVents = true
                 } else {
-                	logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
+                	//logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
+                    logger(30,"warn", "Zone temp change ignored, zone is disabled")
                 }
         	break
         case "vent" :
@@ -736,23 +740,6 @@ def setVents(newVo){
     logger(40,"debug","setVents:exit- ")
 }
 
-def pollVents(){
-	if (vPolling){
-		logger(20,"warn","pollVents- polling vents")
-   		vents.getTemperature()
-		vents.getPressure()
-   		if (state.mainOn == null) return
-   		if (state.mainOn) runIn(60,pollVents)
-    }
-}
-
-def pollVentsII(){
-	log.warn "polling ventsII"
-    vents.getTemperature()
-	vents.getPressure()
-    if (vPolling == true) runIn(60,pollVentsII)
-}
-
 def delayClose(){
     setVents(0)
     logger(10,"warn","Vent close executed")
@@ -777,31 +764,6 @@ def tempToK(ct){
 }
 
 //dynamic page input helpers
-//check if these are even used....
-def ventCountOptions(){
-	def opts = []
-    def v410 = (settings.v410 ?: 0).toInteger()
-    def v412 = (settings.v412 ?: 0).toInteger()
-    def v610 = (settings.v610 ?: 0).toInteger()
-    def v612  = (settings.v612 ?: 0).toInteger()
-    def remaining = vents.size() + 1 - (v410 + v412 + v610 + v612 )
-    
-    0.step remaining, 1, {
-   		opts.push("${it}")
-	}
-    //opts.push(["100":"Fully open"])
-    return opts
-}
-
-def ventCountNotMet(){
-	if (!vents) return false
-	def v410 = (settings.v410 ?: 0).toInteger()
-    def v412 = (settings.v412 ?: 0).toInteger()
-    def v610 = (settings.v610 ?: 0).toInteger()
-    def v612  = (settings.v612 ?: 0).toInteger()
-    def inZone = vents.size()
-    return (v410 + v412 + v610 + v612) != inZone
-}
 
 def minVoptions(){
 	return [["0":"Fully closed"],["5":"5%"],["10":"10%"],["15":"15%"],["20":"20%"],["25":"25%"],["30":"30%"],["35":"35%"],["40":"40%"]]
@@ -867,7 +829,7 @@ def statHandler(evt){
         		def BigDecimal dTemp  = (state.endTemp - state.startTemp)
             	def BigDecimal dTime = (state.endTime - state.startTime) / 3600000
             	def BigDecimal dph = dTemp / dTime
-        		def value = ["dph":"${dph}" ,"dTime":"${dTime}" ,"dTemp":"${dTemp}", "vo":"${vents.currentValue("level")}"]
+        		def value = ["dph":"${dph}" ,"dTime":"${dTime}" ,"dTemp":"${dTemp}", "vo":"${vents.currentValue("level")}%"]
         		log.info "${value}"
             	if (state.runMaps.size == 0){
             		state.runMaps = ["${key}":"${value}"]
@@ -914,7 +876,7 @@ def getZoneState(){
             if (r) rtt = "response time: ${r}s"
         }
 		
-		report = report + "\n\tVent: ${vent.displayName}\n\t\tlevel: ${l}\n\t\tbattery: ${b}%\n\t\t${rtt}\n\t\tlast response: ${lrd}"
+		report = report + "\n\tVent: ${vent.displayName}\n\t\tlevel: ${l}%\n\t\tbattery: ${b}%\n\t\t${rtt}\n\t\tlast response: ${lrd}"
     }
     return report
 }
@@ -923,17 +885,20 @@ def getZoneTemp(){
 	return state.zoneTemp
 }
 
-def getVentReport(){
-	def report = []
+def getZoneSI(){
+	def report
+    def totalSI = 0.0
+    def minSI = 0.0
+    def maxSI = 0.0
     vents.each{ vent ->
-    	def P = vent.currentState("pressure")
-        def L = vent.currentState("level")
-        def T = vent.currentState("temperature")
-        def B = vent.currentState("battery")
-        def set = [P:[D:P.date.format("yyyy-MM-dd HH:mm:ss") ,V:P.value],L:[D:L.date.format("yyyy-MM-dd HH:mm:ss") ,V:L.value],T:[D:T.date.format("yyyy-MM-dd HH:mm:ss") ,V:T.value]]
-        report.add((vent.displayName):set)
+		if (settings."${vent.id}"){
+			totalSI = totalSI + settings."${vent.id}".toInteger() ?: 0
+        }
     }
-    return report.toString() ?: "nothing new..."
+    minSI = (totalSI * settings.minVo.toInteger()) / 100
+    maxSI = (totalSI * settings.maxVo.toInteger()) / 100
+    report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI}"
+    return report
 }
 
 /*

@@ -74,21 +74,8 @@ def initialize() {
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
     state.mainQuick	 = state.mainQuick ?: false
     checkNotify(null)
-    
-  	/*
-    state.runMaps = []
-    state.runTimes = []
-    state.lastDPH = 0
-    state.endTime = ""
-    state.startTime = ""
-    state.endTemp = ""
-    state.startTemp = ""
-    state.crntDtemp = ""
-	state.estDtime = ""
-	state.lastCalibrationStart = ""
-    log.info "stat state:${tStat.currentValue("thermostatOperatingState")} runMaps:${state.runMaps.size()}"
-    //app.updateLabel("${settings.zoneName} Vent Zone") 
-    */
+    //log.debug "app.id:${app.id}" app.id:2442be54-1cbc-4fe8-a378-baaffdf06591
+  	state.etf = app.id == '2442be54-1cbc-4fe8-a378-baaffdf06591'
     
 }
 
@@ -238,6 +225,15 @@ def reporting(){
 					,state		: null
 					,params		: [rptName:report]
 				)  
+                if (state.etf){
+                	report = "VO report"
+                	href( "report"
+						,title		: report
+						,description: ""
+						,state		: null
+						,params		: [rptName:report]
+					)  
+                }
             }
    }
 }
@@ -290,6 +286,9 @@ def getReport(rptName){
             rtm = "${rtm} minutes"
         } 
         reports = "Main system:\n\tstart: ${stime}\n\tend: ${etime}\n\tstart temp: ${sTemp}\n\tend temp: ${eTemp}\n\tduration: ${rtm}\n\n"
+    }
+    if (rptName == "VO report"){
+    	cMethod = "getZoneSI"
     }
     def sorted = childApps.sort{it.label}
     sorted.each{ child ->
@@ -564,6 +563,10 @@ def getLogLevel(val){
 def getLogLevels(){
 	//return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"],["15":"Pressure only"]]
     return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"]]
+}
+
+def getID(){
+	return state.etf
 }
 
 /*
