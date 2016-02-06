@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.5f
- 	
+ *  keenectZone 0.1.5u
+ 
+ 	0.1.5u	fix disable switch fireing up zone when app update fires
+    		added vent opening reporting hooks
     0.1.5f	arggg....
  	0.1.5e	added in missing local close options for zone disable mid cycle...
  	0.1.5d	changed error log in eval to info and "nothing to do...", since it's not really an error
@@ -76,7 +78,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5f"
+	state.vChild = "0.1.5u"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -360,7 +362,7 @@ def zoneEvaluate(params){
         		*/
                 //initial request for info during app install and zone update
                 if (data.initRequest){
-                    evaluateVents = data.mainOn
+                	if (!zoneDisabledLocal) evaluateVents = data.mainOn
                     //log.info "zoneEvaluate- init zone request, evaluateVents: ${evaluateVents}"
                 //set point changes, ignore setbacks
                 } else if (data.mainOn && (mainHSPLocal < data.mainHSP || mainCSPLocal > data.mainCSP)) {
@@ -780,7 +782,7 @@ def tempToK(ct){
 //dynamic page input helpers
 
 def minVoptions(){
-	return [["0":"Fully closed"],["5":"5%"],["10":"10%"],["15":"15%"],["20":"20%"],["25":"25%"],["30":"30%"],["35":"35%"],["40":"40%"]]
+	return [["0":"Fully closed"],["5":"5%"],["10":"10%"],["15":"15%"],["20":"20%"],["25":"25%"],["30":"30%"],["35":"35%"],["40":"40%"],["45":"45%"],["50":"50%"],["55":"55%"],["60":"60%"]]
 }
 
 def maxVoptions(){
@@ -878,7 +880,8 @@ def getZoneSI(){
     }
     minSI = (totalSI * settings.minVo.toInteger()) / 100
     maxSI = (totalSI * settings.maxVo.toInteger()) / 100
-    report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI} crntSI: ${crntSI}"
+    //report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI} crntSI: ${crntSI}"
+    report = [totalSI:totalSI,minSI:minSI,maxSI:maxSI,crntSI:crntSI]
     return report
 }
 
