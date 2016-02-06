@@ -1,6 +1,7 @@
 /**
- *  keenectZone 0.1.5d
- 
+ *  keenectZone 0.1.5f
+ 	
+    0.1.5f	arggg....
  	0.1.5e	added in missing local close options for zone disable mid cycle...
  	0.1.5d	changed error log in eval to info and "nothing to do...", since it's not really an error
     		fixed zone remaining disabled when zone switch is removed as a configuration option
@@ -75,7 +76,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5e"
+	state.vChild = "0.1.5f"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -465,10 +466,10 @@ def zoneEvaluate(params){
                     def zoneCloseOption = settings.ventCloseWait.toInteger()
                     if (zoneCloseOption != -1){
                        	delaySeconds = zoneCloseOption
-                       	if (data.delay != -1){
-                           	delaySeconds = delaySeconds + data.delay
-                        } 
-       					if (delaySeconds == 0){
+                       	//if (data.delay != -1){
+                        //   	delaySeconds = delaySeconds + data.delay
+                        //} 
+       					if (delaySeconds > 0){
                 			logger(10,"warn", "Vents closed via close vents option")
         					setVents(0)
         				} else {
