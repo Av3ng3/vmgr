@@ -1,8 +1,8 @@
 /**
- *  kvParent 0.1.5
+ *  Kennect 0.1.5a
  	
+ 	0.1.5a	fixed quick recovery causing zone to bypass setback detection
     0.1.5	added quick recovery support
- 	
  	0.1.3	vent close global options changed
     0.1.2a	update for todays change in todays map input change
     0.1.2	0.1.1 was a cruel and mean thing...
@@ -56,7 +56,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.5"
+	state.vParent = "0.1.5a"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -142,6 +142,22 @@ def main(){
                    		,defaultValue	: "-1"
             		)             
             }
+            /*
+            if (state.etf){
+            	section("Non Keen vent sizes"){
+					input(
+            			name			: v56
+                		,title			: "Number of 4x14 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["56":"1"],["112":"2"],["168":"3"],["224":"4"],["280":"5"],["336":"6"],["392":"7"],["448":"8"],["504":"9"],["560":"10"]]
+                        ,defaultValue	: "0"
+            		)
+             	}
+            } 
+            */
             if (installed){
                 section (getVersionInfo()) { }
             }
@@ -317,50 +333,61 @@ def checkNotify(evt){
 	def tempStr = ''
     def tempFloat = 0.0
     def tempBool = false
+    def isSetback = false
     def delay = settings.fanRunOn.toInteger()
 	
+    //thermostat state
 	tempStr = getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
 	def mainState = state.mainState
     def mainStateChange = mainState != tempStr
     mainState = tempStr
     logger(40,"info","checkNotify- mainState: ${mainState}, mainStateChange: ${mainStateChange}")
     
+    //thermostate mode
     tempStr = getNormalizedOS(tStat.currentValue("thermostatMode"))
     def mainMode = state.mainMode
     def mainModeChange = mainMode != tempStr
     mainMode = tempStr
     logger(40,"info","checkNotify- mainMode: ${mainMode}, mainModeChange: ${mainModeChange}")
 
+	//cooling set point
 	tempFloat = tStat.currentValue("coolingSetpoint").toFloat()
     def mainCSP = state.mainCSP
     def mainCSPChange = mainCSP != tempFloat
+    //is setback? new csp > old csp
+    isSetback = tempFloat > mainCSP
     mainCSP = tempFloat
     logger(40,"info","checkNotify- mainCSP: ${mainCSP}, mainCSPChange: ${mainCSPChange}")
 
+	//heating set point
 	tempFloat = tStat.currentValue("heatingSetpoint").toFloat()
     def mainHSP = state.mainHSP
     def mainHSPChange = mainHSP != tempFloat
+    //is setback? new hsp < old hsp
+    isSetback = tempFloat < mainHSP
     mainHSP = tempFloat
     logger(40,"info","checkNotify- mainHSP: ${mainHSP}, mainHSPChange: ${mainHSPChange}")
     
     def mainOn = mainState != "idle"
     
+    //quick recovery
     def mainTemp = tempSensors.currentValue("temperature").toFloat()
     def mainQuick = state.mainQuick
     def mainQuickChange = false
     
-    if (mainOn){
+    logger(30,"debug","checkNotify- quick recovery mainOn: ${mainOn}, isSetback: ${isSetback}")
+    if (mainOn && !isSetback){
       	//mainTemp = tempFloat
         if (mainState == "heat"){
     		tempBool =  (mainTemp + 2) <= mainHSP
-            //log.info "mainState == heat tempBool:${tempBool}"
     	} else if (mainState == "cool") {
     		tempBool =  (mainTemp - 2) >= mainCSP
     	}
         mainQuickChange = tempBool != mainQuick
         mainQuick = tempBool
+        logger(30,"debug","checkNotify- quick recovery active: ${mainQuick}, changed: ${mainQuickChange}")
     }
-  
+  	
     
     //always update state vars
     state.mainState = mainState

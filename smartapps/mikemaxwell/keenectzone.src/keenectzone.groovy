@@ -1,6 +1,7 @@
 /**
- *  kvChild 0.1.5d
+ *  keenectZone 0.1.5d
  
+ 	0.1.5e	added in missing local close options for zone disable mid cycle...
  	0.1.5d	changed error log in eval to info and "nothing to do...", since it's not really an error
     		fixed zone remaining disabled when zone switch is removed as a configuration option
             fixed zone disable in general
@@ -74,7 +75,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5d"
+	state.vChild = "0.1.5e"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -273,7 +274,7 @@ def advanced(){
                 	,submitOnChange	: false
                    	,defaultValue	: "10"
             	)            
-         		def etnTitle = sendEventsToNotifications ?  "Send lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
+         		def etnTitle = sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
           		input(
             		name			: "sendEventsToNotifications"
                 	,title			: etnTitle 
@@ -368,34 +369,26 @@ def zoneEvaluate(params){
                 } else if (data.mainStateChange){
                 	//system start up
                 	if (data.mainOn && !zoneDisabledLocal){
-                    	//fire up temp/pressure snapshot here
                         evaluateVents = true
-                        //if (vPolling){
-                        //	getInitialPressure()
-                        //	runIn(60,pollVents)
-                        //}
                         
                         //logger(30,"info","zoneEvaluate- system start up, evaluate: ${evaluateVents}, vent polling started: ${vPolling}")
                         logger(30,"info","zoneEvaluate- system start up, evaluate: ${evaluateVents}")
                         logger(10,"info","Main HVAC is on and ${data.mainState}ing")
                         
                     //system shut down
-                    } else if (!data.mainOn){
-                    	//zoneDisablePendingLocal = false
+                    } else if (!data.mainOn && !zoneDisabledLocal){
                     	runningLocal = false
+                        initTempOffset()
                         def asp = state.activeSetPoint
                         def d
                         if (zoneTempLocal && asp){
                             d = (zoneTempLocal - asp).toFloat()
                             d = d.round(1)
                         }
-                       	//def asp = state.activeSetPoint
-                        //def d = (zoneTempLocal - asp).toFloat()
-                        //d = d.round(1)
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"        
                     	logger(10,"info","Main HVAC has shut down.")                        
                         
-						//check zone vent close options from zone and from parent
+						//check zone vent close options from zone
                         def delaySeconds = 0
                         def zoneCloseOption = settings.ventCloseWait.toInteger()
                         if (zoneCloseOption != -1){
@@ -429,6 +422,7 @@ def zoneEvaluate(params){
                 mainQuickLocal =  data.mainQuick 
                 zoneCSPLocal = mainCSPLocal + coolOffsetLocal
                 zoneHSPLocal = mainHSPLocal + heatOffsetLocal
+                
         	break
         case "temp" :
         		//data:["tempChange"]
@@ -454,8 +448,35 @@ def zoneEvaluate(params){
                 	zoneDisabledLocal = false
                 	evaluateVents = true
                 } else {
+                	if (mainOnLocal){
+                  		def asp = state.activeSetPoint
+                        def d
+                        if (zoneTempLocal && asp){
+                            d = (zoneTempLocal - asp).toFloat()
+                            d = d.round(1)
+                        }
+                        state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"                    
+                    }
                 	zoneDisabledLocal = true
                 	runningLocal = false
+                    
+                    //check zone vent close options from zone
+                    def delaySeconds = 0
+                    def zoneCloseOption = settings.ventCloseWait.toInteger()
+                    if (zoneCloseOption != -1){
+                       	delaySeconds = zoneCloseOption
+                       	if (data.delay != -1){
+                           	delaySeconds = delaySeconds + data.delay
+                        } 
+       					if (delaySeconds == 0){
+                			logger(10,"warn", "Vents closed via close vents option")
+        					setVents(0)
+        				} else {
+                			logger(10,"warn", "Vent closing is scheduled in ${delaySeconds} seconds")
+        					runIn(delaySeconds,delayClose)
+        				}                            
+                    } 
+                    logger(10,"info", "Zone was disabled, we won't be doing anything alse until it's re-enabled")
                 }
         	break
         case "pressure" :
@@ -577,6 +598,8 @@ def tempHandler(evt){
     if (state.mainOn){
     	logger(30,"debug","tempHandler- tempChange, value: ${evt.value}")
     	zoneEvaluate([msg:"temp", data:["tempChange"]])	
+    } else {
+    	calcTempOffset()
     }
     
 }
@@ -795,46 +818,6 @@ def zoneTempOptions(){
 	return zo
 }
 
-//legacy data logging and statistics
-//spent too much time on this to delete it yet.
-def statHandler(evt){
-	if (state.runMaps.size() < 10) {
-		log.info "event:${evt.value}"
-    	def key = evt.date.format("yyyy-MM-dd HH:mm:ss")
-    	def v  = evt.value
-    	def evtTime = evt.date.getTime()
-    	if (v == "heating"){
-    		//start
-        	state.lastCalibrationStart = key
-        	state.startTime = evtTime
-        	state.startTemp = tempSensors.currentValue("temperature")
-        	log.info "start -time:${state.startTime} -temp:${state.startTemp}"
-    	} else if (v == "idle" && state.startTime) {
-    		//end
-        	state.endTime = evtTime
-        	state.endTemp = tempSensors.currentValue("temperature")
-        	log.info "end -time:${state.endTime} -temp:${state.endTemp}"
-        
-        	if (state.endTime > state.startTime && state.endTemp > state.startTemp ){
-        		def BigDecimal dTemp  = (state.endTemp - state.startTemp)
-            	def BigDecimal dTime = (state.endTime - state.startTime) / 3600000
-            	def BigDecimal dph = dTemp / dTime
-        		def value = ["dph":"${dph}" ,"dTime":"${dTime}" ,"dTemp":"${dTemp}", "vo":"${vents.currentValue("level")}%"]
-        		log.info "${value}"
-            	if (state.runMaps.size == 0){
-            		state.runMaps = ["${key}":"${value}"]
-            	} else {
-            		state.runMaps << ["${key}":"${value}"]
-            	}
-            	state.endTime = ""
-            	state.startTime = ""
-            	state.endTemp = ""
-            	state.startTemp = ""
-        	}
-        }
-    }
-}
-
 //report methods, called from parent
 def getEndReport(){
 	return state.endReport ?: "\n\tNo data available yet."
@@ -851,7 +834,10 @@ def getZoneState(){
     def s 
     if (state.running == true) s = true
     else s = false
-    def report =  "\n\trunning: ${s}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}"
+    //settings.quickRecovery state.mainQuick
+    def qr = false
+    if (settings.quickRecovery && state.mainQuick && s) qr = true
+    def report =  "\n\trunning: ${s}\n\tqr active: ${qr}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}"
     vents.each{ vent ->
  		def b = vent.currentValue("battery")
         def l = vent.currentValue("level").toInteger()
@@ -878,19 +864,52 @@ def getZoneTemp(){
 def getZoneSI(){
 	def report
     def totalSI = 0.0
+    def crntSI = 0.0
     def minSI = 0.0
     def maxSI = 0.0
     vents.each{ vent ->
 		if (settings."${vent.id}"){
-			totalSI = totalSI + settings."${vent.id}".toInteger() ?: 0
+        	def vsi = settings."${vent.id}".toInteger() ?: 0
+            def crntVo = vent.currentValue("level").toInteger()
+			totalSI = totalSI + vsi
+            crntSI = crntSI + (crntVo * vsi) / 100
         }
     }
     minSI = (totalSI * settings.minVo.toInteger()) / 100
     maxSI = (totalSI * settings.maxVo.toInteger()) / 100
-    report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI}"
+    report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI} crntSI: ${crntSI}"
     return report
 }
 
+def initTempOffset(){
+	def t = tempSensors.currentValue("temperature").toFloat()
+    def st = now()
+    if (state."${tempSensors.id}"){
+    	//update
+        state."${tempSensors.id}".zoneStartTime = st
+        state."${tempSensors.id}".zoneStartTemp = t
+        state."${tempSensors.id}".tempOffset = null
+        state."${tempSensors.id}".timeOffset = null
+    } else {
+    	//init from scratch
+        state."${tempSensors.id}" = [zoneStartTime:st,zoneStartTemp:t,tempOffset:null,timeOffset:null] 
+        //log.debug "initTempOffset: ${state."${tempSensors.id}"}"
+    }
+}
+
+def calcTempOffset(){
+	def t = tempSensors.currentValue("temperature").toFloat()
+    def st = now()
+    //log.debug "calcTempOffset: ${state."${tempSensors.id}"} st: ${st} t: ${t}"
+    if (state."${tempSensors.id}"){
+    	//update
+        if (t > state."${tempSensors.id}".zoneStartTemp){
+        	state."${tempSensors.id}".tempOffset = (t - state."${tempSensors.id}".zoneStartTemp).round(2)
+        	state."${tempSensors.id}".timeOffset = st - state."${tempSensors.id}".zoneStartTime        	
+        }
+    } 
+    log.debug "calcTempOffset: ${state."${tempSensors.id}"} crntTemp: ${t}"
+}
 /*
 	//spit out some time testing...
     def startTime = now() //epocMS, UTC
