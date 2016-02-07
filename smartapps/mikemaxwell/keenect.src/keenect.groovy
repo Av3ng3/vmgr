@@ -1,6 +1,7 @@
 /**
- *  Kennect 0.1.5a
+ *  Keenect 0.1.6
  	
+    0.1.6	released vo reporting
  	0.1.5a	fixed quick recovery causing zone to bypass setback detection
     0.1.5	added quick recovery support
  	0.1.3	vent close global options changed
@@ -56,7 +57,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.5a"
+	state.vParent = "0.1.6"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -142,11 +143,42 @@ def main(){
                    		,defaultValue	: "-1"
             		)             
             }
-            /*
-            if (state.etf){
+            
+            //if (state.etf){
+            	//[["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
             	section("Non Keen vent sizes"){
 					input(
-            			name			: v56
+            			name			: "v20"
+                		,title			: "Number of 2x10 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["20":"1"],["40":"2"],["60":"3"],["80":"4"],["100":"5"],["120":"6"],["140":"7"],["160":"8"],["180":"9"],["200":"10"]]
+                        ,defaultValue	: "0"
+            		) 
+					input(
+            			name			: "v40"
+                		,title			: "Number of 4x10 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["40":"1"],["80":"2"],["120":"3"],["160":"4"],["200":"5"],["240":"6"],["280":"7"],["320":"8"],["360":"9"],["400":"10"]]
+                        ,defaultValue	: "0"
+            		) 
+					input(
+            			name			: "v48"
+                		,title			: "Number of 4x12 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["48":"1"],["96":"2"],["144":"3"],["192":"4"],["240":"5"],["288":"6"],["336":"7"],["384":"8"],["432":"9"],["480":"10"]]
+                        ,defaultValue	: "0"
+            		) 
+					input(
+            			name			: "v56"
                 		,title			: "Number of 4x14 vents"
                 		,multiple		: false
                 		,required		: true
@@ -154,10 +186,31 @@ def main(){
                     	,submitOnChange	: false
                        	,options		: [["0":"0"],["56":"1"],["112":"2"],["168":"3"],["224":"4"],["280":"5"],["336":"6"],["392":"7"],["448":"8"],["504":"9"],["560":"10"]]
                         ,defaultValue	: "0"
-            		)
-             	}
-            } 
-            */
+            		) 
+					input(
+            			name			: "v60"
+                		,title			: "Number of 6x10 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["60":"1"],["120":"2"],["180":"3"],["240":"4"],["300":"5"],["360":"6"],["420":"7"],["480":"8"],["540":"9"],["600":"10"]]
+                        ,defaultValue	: "0"
+            		) 
+					input(
+            			name			: "v72"
+                		,title			: "Number of 6x12 vents"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,submitOnChange	: false
+                       	,options		: [["0":"0"],["72":"1"],["144":"2"],["216":"3"],["288":"4"],["360":"5"],["732":"6"],["504":"7"],["576":"8"],["648":"9"],["720":"10"]]
+                        ,defaultValue	: "0"
+            		) 
+
+				}
+            //} 
+            
             if (installed){
                 section (getVersionInfo()) { }
             }
@@ -242,7 +295,7 @@ def reporting(){
 					,params		: [rptName:report]
 				)  
                 if (state.etf){
-                	report = "VO report"
+                	report = "Percent open analysis"
                 	href( "report"
 						,title		: report
 						,description: ""
@@ -270,10 +323,12 @@ def report(params){
 
 def getReport(rptName){
 	def cMethod
+    def standardReport = false
     //[stat:[mainState:heat|cool|auto,mainMode:heat|cool|idle,mainCSP:,mainHSP:,mainOn:true|false]]
     def t = tempSensors.currentValue("temperature")
     def reports = ""
 	if (rptName == "Current state"){
+    	standardReport = true
     	cMethod = "getZoneState"
         //get whole house average temp
         def averageTemp = 0
@@ -283,12 +338,14 @@ def getReport(rptName){
         averageTemp = (averageTemp / childApps.size()).toDouble().round(1)
         reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}\n\tcooling set point: ${tempStr(state.mainCSP)}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
         reports = reports + "Average zone temp: ${tempStr(averageTemp)}\n\n"
-    }
+    } 
     if (rptName == "Configuration"){
+    	standardReport = true
     	cMethod = "getZoneConfig"
         reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}\n\tcooling set point: ${tempStr(state.mainCSP)}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
-    }
+    }  
     if (rptName == "Last results"){
+    	standardReport = true
     	cMethod = "getEndReport"
         def stime = "No data available yet"
         def etime = "No data available yet"
@@ -303,18 +360,47 @@ def getReport(rptName){
         } 
         reports = "Main system:\n\tstart: ${stime}\n\tend: ${etime}\n\tstart temp: ${sTemp}\n\tend temp: ${eTemp}\n\tduration: ${rtm}\n\n"
     }
-    if (rptName == "VO report"){
-    	cMethod = "getZoneSI"
-    }
-    def sorted = childApps.sort{it.label}
-    sorted.each{ child ->
-    	//log.debug "getting child report for: ${child.label}"
-       	try {
-    		def report = child."${cMethod}"()
-       		reports = reports + "Zone: " + child.label + "${report}" + "\n"
-       	}
-       	catch(e){}
-    }
+    if (standardReport){
+    	def sorted = childApps.sort{it.label}
+    	sorted.each{ child ->
+    		//log.debug "getting child report for: ${child.label}"
+       		try {
+    			def report = child."${cMethod}"()
+       			reports = reports + "Zone: " + child.label + "${report}" + "\n"
+       		}
+       		catch(e){}
+        }
+    } else {
+    	//non standard reports
+    	if (rptName == "Percent open analysis"){
+    		cMethod = "getZoneSI"
+        	def totalSI = v20.toInteger() + v40.toInteger() + v48.toInteger() + v56.toInteger() + v60.toInteger() + v72.toInteger()
+        	def minSI = 0.0
+        	def maxSI = 0.0
+        	def crntSI = 0.0
+        	childApps.each{ child ->
+    			/*
+            	[totalSI:totalSI,minSI:minSI,maxSI:maxSI,crntSI:crntSI]
+				v56 is total non
+            	*/
+       			try {
+    				def data = child."${cMethod}"()
+                	totalSI = totalSI + data.totalSI
+       				minSI = minSI + data.minSI
+                	maxSI = maxSI + data.maxSI
+                	crntSI = crntSI + data.crntSI
+       			}
+       			catch(e){}
+    		}
+            def pctMin = ((minSI / totalSI) * 100).toInteger()
+            def pctMax = ((maxSI / totalSI) * 100).toInteger() 
+            def pctCrnt = ((crntSI / totalSI) * 100).toInteger()
+        	//actual report output
+        	//reports = reports + "Zone: " + child.label + "${report}" + "\n"
+            //reports = "totalSI: ${totalSI}\nminSI: ${minSI}\nmaxSI: ${maxSI}\ncrntSI: ${crntSI}\npctMin: ${pctMin}%\npctMax: ${pctMax}%\npctCrnt: ${pctCrnt}%\n"
+            reports = "All vents at minimum\n\t${pctMin}%\nAll vents at maximum\n\t${pctMax}%\nCurrently\n\t${pctCrnt}%\n"
+    	}
+	}
     return reports
 }
 

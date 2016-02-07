@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.5u
- 
+ *  keenectZone 0.1.6
+ 	
+    0.1.6	released vo reporting
+    		added in off check in set level since the vents seem to report funny
  	0.1.5u	fix disable switch fireing up zone when app update fires
     		added vent opening reporting hooks
     0.1.5f	arggg....
@@ -78,7 +80,7 @@ def updated() {
 
 def initialize() {
 
-	state.vChild = "0.1.5u"
+	state.vChild = "0.1.6"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
@@ -216,7 +218,7 @@ def main(){
 					,state			: null
 				)
             }
-            if (state.etf){
+            //if (state.etf){
             	section("Vent sizes"){
 					if (vents){
   						//spin through sizing selections
@@ -233,7 +235,7 @@ def main(){
                     	}
                 	}            
             	}
-            }                
+            //}                
 	}
 }
 
@@ -450,6 +452,7 @@ def zoneEvaluate(params){
                 if (data.zoneIsEnabled){
                 	zoneDisabledLocal = false
                 	evaluateVents = true
+                //shut it down with options
                 } else {
                 	if (mainOnLocal){
                   		def asp = state.activeSetPoint
@@ -716,6 +719,7 @@ def setVents(newVo){
         def previousRequest
         def previousActual
 		def crntVo = vent.currentValue("level").toInteger()
+        def isOff = vent.currentValue("switch") == "off"
         /*
         	0 = 0 for sure
         	> 90 = 100, usually
@@ -738,7 +742,7 @@ def setVents(newVo){
             	changeMe = true
             }
         }
-        if (changeMe){
+        if (changeMe || isOff){
         	changeRequired = true
         	vent.setLevel(newVo)
         }
