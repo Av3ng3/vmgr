@@ -193,7 +193,7 @@ def main(){
                 	,multiple		: false
                 	,required		: true
                 	,type			: "enum"
-                	,options		: [["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["300":"After 5 Minutes"]]
+                	,options		: [["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
                 	,submitOnChange	: true
                    	,defaultValue	: "-1"
             	)
@@ -279,7 +279,7 @@ def advanced(){
                 	,submitOnChange	: false
                    	,defaultValue	: "10"
             	)            
-         		def etnTitle = sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
+         		def etnTitle = sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send Lite events to notification feed is [off]" 
           		input(
             		name			: "sendEventsToNotifications"
                 	,title			: etnTitle 
