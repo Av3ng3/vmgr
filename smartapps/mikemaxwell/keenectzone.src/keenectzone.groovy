@@ -1,6 +1,9 @@
 /**
- *  keenectZone 0.1.6
+ *  keenectZone 0.1.7
  	
+    0.1.7 	removed vo reporting
+    		re-wrote switch handler
+            re-wrote a bunch of stuff
     0.1.6	released vo reporting
     		added in off check in set level since the vents seem to report funny
  	0.1.5u	fix disable switch fireing up zone when app update fires
@@ -79,14 +82,13 @@ def updated() {
 }
 
 def initialize() {
-
-	state.vChild = "0.1.6"
+	state.vChild = "0.1.7"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     //subscribe(vents, "pressure", getAdjustedPressure)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
-    if (!zoneControlSwitch) state.zoneDisabled = false
+   	fetchZoneControlState()
     zoneEvaluate(parent.notifyZone())
 }
 
@@ -218,6 +220,7 @@ def main(){
 					,state			: null
 				)
             }
+            /*
             //if (state.etf){
             	section("Vent sizes"){
 					if (vents){
@@ -235,7 +238,8 @@ def main(){
                     	}
                 	}            
             	}
-            //}                
+            //}
+            */
 	}
 }
 
@@ -295,7 +299,7 @@ def advanced(){
 
 //zone control methods
 def zoneEvaluate(params){
-	logger(30,"debug","zoneEvaluate:enter-- parameters: ${params}")
+	logger(40,"debug","zoneEvaluate:enter-- parameters: ${params}")
     //log.warn "params:${params}"
 	//param data structures
     /*
@@ -318,13 +322,14 @@ def zoneEvaluate(params){
 	def mainHSPLocal = state.mainHSP  ?: 0
 	def mainCSPLocal = state.mainCSP  ?: 0
 	def mainOnLocal = state.mainOn  ?: ""
-    def mainQuickLocal =  state.mainQuick ?: false
-    if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null || mainQuickLocal == null){
-    	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal} mainQuickLocal:${mainQuickLocal}"
+    //def mainQuickLocal =  state.mainQuick ?: false
+    //need new var for quickRecoveryActive == 
+    if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null ){
+    	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal}"
     }
  	//zone states    
     //def zoneDisablePendingLocal = state.zoneDisablePending ?: false
-	def zoneDisabledLocal = state.zoneDisabled ?: false
+	def zoneDisabledLocal = fetchZoneControlState()
     def runningLocal
     
     //always fetch these since the zone ownes them
@@ -383,7 +388,7 @@ def zoneEvaluate(params){
                     //system shut down
                     } else if (!data.mainOn && !zoneDisabledLocal){
                     	runningLocal = false
-                        initTempOffset()
+                        //initTempOffset()
                         def asp = state.activeSetPoint
                         def d
                         if (zoneTempLocal && asp){
@@ -394,27 +399,20 @@ def zoneEvaluate(params){
                     	logger(10,"info","Main HVAC has shut down.")                        
                         
 						//check zone vent close options from zone
-                        def delaySeconds = 0
-                        def zoneCloseOption = settings.ventCloseWait.toInteger()
-                        if (zoneCloseOption != -1){
-                        	delaySeconds = zoneCloseOption
-                        	if (data.delay != -1){
-                            	delaySeconds = delaySeconds + data.delay
-                            } 
-       						if (delaySeconds == 0){
+                    	//def delaySeconds = 0
+                    	def zoneCloseOption = settings.ventCloseWait.toInteger()
+                    	if (zoneCloseOption != -1){
+                       		//delaySeconds = zoneCloseOption
+       						if (zoneCloseOption == 0){
                 				logger(10,"warn", "Vents closed via close vents option")
         						setVents(0)
-        					} else {
-                				logger(10,"warn", "Vent closing is scheduled in ${delaySeconds} seconds")
-        						runIn(delaySeconds,delayClose)
+        					} else if (zoneCloseOption > 0){
+                				logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
+        						runIn(zoneCloseOption,delayClose)
         					}                            
-                        } 
+                    	} 
      				}
-                } else if (data.mainQuickChange && settings.quickRecovery){
-                	if (data.mainQuick) logger(10,"info","Main HVAC entered quick recovery mode.")
-                    else logger(10,"info","Main HVAC exited quick recovery mode.")
-                    evaluateVents = true
-   				} else {
+                } else {
                 	logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
                 }
                 
@@ -424,16 +422,11 @@ def zoneEvaluate(params){
                 mainHSPLocal = data.mainHSP
                 mainCSPLocal = data.mainCSP
                 mainOnLocal = data.mainOn
-                mainQuickLocal =  data.mainQuick 
                 zoneCSPLocal = mainCSPLocal + coolOffsetLocal
                 zoneHSPLocal = mainHSPLocal + heatOffsetLocal
                 
         	break
         case "temp" :
-        		//data:["tempChange"]
-        		//logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
-                //process changes if zone is not disabled
-                //if (!zoneDisabledLocal || zoneDisablePendingLocal){
                 if (!zoneDisabledLocal){
                 	logger(30,"debug","zoneEvaluate- zone temperature changed, zoneTemp: ${zoneTempLocal}")
                 	evaluateVents = true
@@ -447,10 +440,9 @@ def zoneEvaluate(params){
                 
         	break
         case "zoneSwitch" :
-        		//[msg:"zoneSwitch", data:[zoneIsEnabled:true|false]]
                 //fire up zone since it was activated
-                if (data.zoneIsEnabled){
-                	zoneDisabledLocal = false
+                if (!zoneDisabledLocal){
+                	//zoneDisabledLocal = false
                 	evaluateVents = true
                 //shut it down with options
                 } else {
@@ -463,23 +455,19 @@ def zoneEvaluate(params){
                         }
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"                    
                     }
-                	zoneDisabledLocal = true
                 	runningLocal = false
                     
                     //check zone vent close options from zone
-                    def delaySeconds = 0
+                    //def delaySeconds = 0
                     def zoneCloseOption = settings.ventCloseWait.toInteger()
                     if (zoneCloseOption != -1){
-                       	delaySeconds = zoneCloseOption
-                       	//if (data.delay != -1){
-                        //   	delaySeconds = delaySeconds + data.delay
-                        //} 
-       					if (delaySeconds > 0){
+                       	//delaySeconds = zoneCloseOption
+       					if (zoneCloseOption == 0){
                 			logger(10,"warn", "Vents closed via close vents option")
         					setVents(0)
-        				} else {
-                			logger(10,"warn", "Vent closing is scheduled in ${delaySeconds} seconds")
-        					runIn(delaySeconds,delayClose)
+        				} else if (zoneCloseOption > 0){
+                			logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
+        					runIn(zoneCloseOption,delayClose)
         				}                            
                     } 
                     logger(10,"info", "Zone was disabled, we won't be doing anything alse until it's re-enabled")
@@ -500,10 +488,27 @@ def zoneEvaluate(params){
         	break
     }    
     
-    //always check for main quick
-   	if (settings.quickRecovery && mainQuickLocal) {
-		maxVoLocal = 100
+    //always check for main quick  quickRecoveryActive
+    def tempBool = false
+    if (settings.quickRecovery){
+    	if (mainStateLocal == "heat"){
+    		tempBool = (zoneTempLocal + 2) <= zoneHSPLocal
+            if (state.quickRecoveryActive != tempBool){
+            	if (state.quickRecoveryActive) logger(10,"info","Zone entered quick recovery mode.")
+            	else logger(10,"info","Zone exited quick recovery mode.")
+            }
+            state.quickRecoveryActive = tempBool
+    	} else if (mainStateLocal == "cool") {
+        	tempBool = (zoneTempLocal - 2) >= zoneCSPLocal
+            if (state.quickRecoveryActive != tempBool){
+                if (state.quickRecoveryActive) logger(10,"info","Zone entered quick recovery mode.")
+            	else logger(10,"info","Zone exited quick recovery mode.")
+            }
+            state.quickRecoveryActive = tempBool
+    	}
+        if (state.quickRecoveryActive) maxVoLocal = 100
     }
+    
     //write state
     state.mainState = mainStateLocal
     state.mainMode = mainModeLocal
@@ -513,8 +518,7 @@ def zoneEvaluate(params){
     state.zoneCSP = zoneCSPLocal
     state.zoneHSP = zoneHSPLocal
     state.zoneTemp = zoneTempLocal
-    state.mainQuick = mainQuickLocal
-    //state.zoneDisablePending = zoneDisablePendingLocal
+    //state.mainQuick = mainQuickLocal
 	state.zoneDisabled = zoneDisabledLocal
   
     if (evaluateVents){
@@ -542,7 +546,7 @@ def zoneEvaluate(params){
                 runningLocal = true
            	}                        
       	} else {
-            logger(10,"info","Nothing to do main HVAC is not running, mainState: ${mainStateLocal}, zoneTemp: ${zoneTempLocal}, zoneHSP: ${zoneHSPLocal}, zoneCSP: ${zoneCSPLocal}")
+            logger(10,"info","Nothing to do, main HVAC is not running, mainState: ${mainStateLocal}, zoneTemp: ${zoneTempLocal}, zoneHSP: ${zoneHSPLocal}, zoneCSP: ${zoneCSPLocal}")
        	}
     }
     //write state
@@ -555,30 +559,34 @@ def zoneEvaluate(params){
 //event handlers
 def levelHandler(evt){
 	logger(40,"debug","levelHandler:enter- ")
-	logger(30,"debug","levelHandler- evt name: ${evt.name}, value: ${evt.value}, rdLen: ${evt.description == ""}")
+	//logger(30,"debug","levelHandler- evt name: ${evt.name}, value: ${evt.value}, rdLen: ${evt.description == ""}")
     
-    def ventData = state."${evt.deviceId}"
+    //def ventData = state."${evt.deviceId}"
     def v = evt.value.toFloat().round(0).toInteger()
     def t = evt.date.getTime()
-    if (ventData != null){
+    if (state."${evt.deviceId}" != null){
         //request
         if (evt.description == ""){
-			ventData.voRequest = v	
-            ventData.voRequestTS = t	
+			state."${evt.deviceId}".voRequest = v	
+            state."${evt.deviceId}".voRequestTS = t
+            logger(30,"debug","levelHandler- request vo: ${v} t: ${t}")
 		//response
 		} else {
-        	ventData.voResponse = v
-            ventData.voResponseTS = t
-            ventData.voTTC = ((t - ventData.voRequestTS) / 1000).toFloat().round(1)
+        	state."${evt.deviceId}".voResponse = v
+            state."${evt.deviceId}".voResponseTS = t
+            state."${evt.deviceId}".voTTC = ((t - state."${evt.deviceId}".voRequestTS) / 1000).toFloat().round(1)
+            logger(30,"debug","levelHandler- response vo: ${v} t: ${t} voTTC: ${voTTC}")
         }
         state."${evt.deviceId}" = ventData
     } else {
     	//request
     	if (evt.description == ""){
-    		state."${evt.deviceId}" =  [voRequest:"${v}",voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+    		state."${evt.deviceId}" =  [voRequest:v,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+            logger(30,"debug","levelHandler-init request vo: ${v} t: ${t}")
         //response
         } else {
         	state."${evt.deviceId}" =  [voRequest:null,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+            logger(30,"debug","levelHandler-init response vo: ${v} t: ${t}")
         }
     }
     
@@ -586,16 +594,15 @@ def levelHandler(evt){
 }
 
 def zoneDisableHandeler(evt){
-    logger(30,"debug","zoneDisableHandeler- evt name: ${evt.name}, value: ${evt.value}")
-    if (evt.isStateChange()){
-    	def zoneIsEnabled = evt.value == "on"
-        if (zoneIsEnabled){
-        	logger(10,"warn", "Zone was enabled via: [${zoneControlSwitch.displayName}]")
-        } else {
-        	logger(10,"warn", "Zone was disabled via: [${zoneControlSwitch.displayName}]")
-        }
-        zoneEvaluate([msg:"zoneSwitch", data:[zoneIsEnabled:zoneIsEnabled]])
+    logger(40,"debug","zoneDisableHandeler- evt name: ${evt.name}, value: ${evt.value}")
+    def zoneIsEnabled = evt.value == "on"
+    if (zoneIsEnabled){
+       	logger(10,"warn", "Zone was enabled via: [${zoneControlSwitch.displayName}]")
+    } else {
+       	logger(10,"warn", "Zone was disabled via: [${zoneControlSwitch.displayName}]")
     }
+    zoneEvaluate([msg:"zoneSwitch"])
+    logger(40,"debug","zoneDisableHandeler:exit- ")
 }
 
 def tempHandler(evt){
@@ -604,9 +611,9 @@ def tempHandler(evt){
     if (state.mainOn){
     	logger(30,"debug","tempHandler- tempChange, value: ${evt.value}")
     	zoneEvaluate([msg:"temp", data:["tempChange"]])	
-    } else {
-    	calcTempOffset()
-    }
+    } //else {
+    //	calcTempOffset()
+    //}
     
 }
 
@@ -673,6 +680,19 @@ def getInitialPressure(){
 }
 
 //misc utility methods
+def fetchZoneControlState(){
+	logger(40,"debug","fetchZoneControlState:enter- ")
+   if (zoneControlSwitch){
+    	state.zoneDisabled = zoneControlSwitch.currentValue("switch") == "off"
+     	logger (30,"info","A zone control switch is selected and zoneDisabled is: ${state.zoneDisabled}")
+    } else {
+    	state.zoneDisabled = false
+        logger (30,"info","A zone control switch is not selected and zoneDisabled is: ${state.zoneDisabled}")
+    }
+    logger(40,"debug","fetchZoneControlState:exit- ")
+    return state.zoneDisabled
+}
+
 def logger(displayLevel,errorLevel,text){
 	//input logLevel 1,2,3,4,-1
     /*

@@ -1,6 +1,9 @@
 /**
- *  Keenect 0.1.6
- 	
+ *  Keenect 0.1.7
+ 	 
+    0.1.7 	removed vo reporting
+    		re-wrote switch handler
+            removed close vent option
     0.1.6	released vo reporting
  	0.1.5a	fixed quick recovery causing zone to bypass setback detection
     0.1.5	added quick recovery support
@@ -57,7 +60,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.6"
+	state.vParent = "0.1.7"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -73,7 +76,7 @@ def initialize() {
     state.mainCSP = state.mainCSP ?: tStat.currentValue("coolingSetpoint").toFloat()
     state.mainHSP = state.mainHSP ?: tStat.currentValue("heatingSetpoint").toFloat()
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
-    state.mainQuick	 = state.mainQuick ?: false
+    //state.mainQuick	 = state.mainQuick ?: false
     checkNotify(null)
     //log.debug "app.id:${app.id}" app.id:2442be54-1cbc-4fe8-a378-baaffdf06591
   	state.etf = app.id == '2442be54-1cbc-4fe8-a378-baaffdf06591'
@@ -126,8 +129,8 @@ def main(){
                 		,type			: "capability.temperatureMeasurement"
                         ,submitOnChange	: false
             		) 
-                    def froTitle = 'Close vents at cycle end is '
-                    if (!fanRunOn || fanRunOn == "-1"){
+                    def froTitle = 'Delay zone cycle end notification is '
+                    if (!fanRunOn || fanRunOn == "0"){
                     	froTitle = froTitle + "[off]"
                     } else {
                     	froTitle = froTitle + "[on]"
@@ -138,12 +141,12 @@ def main(){
                 		,multiple		: false
                 		,required		: true
                 		,type			: "enum"
-                		,options		: [["-1":"Use zone settings"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
+                		,options		: [["0":"Off"],["60":"1 Minute"],["120":"2 Minutes"],["180":"3 Minutes"],["240":"4 Minutes"],["300":"5 Minutes"]]
                         ,submitOnChange	: true
-                   		,defaultValue	: "-1"
+                   		,defaultValue	: "0"
             		)             
             }
-            
+            /*
             //if (state.etf){
             	//[["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
             	section("Non Keen vent sizes"){
@@ -210,7 +213,7 @@ def main(){
 
 				}
             //} 
-            
+            */
             if (installed){
                 section (getVersionInfo()) { }
             }
@@ -294,6 +297,7 @@ def reporting(){
 					,state		: null
 					,params		: [rptName:report]
 				)  
+                /*
                 if (state.etf){
                 	report = "Percent open analysis"
                 	href( "report"
@@ -303,6 +307,7 @@ def reporting(){
 						,params		: [rptName:report]
 					)  
                 }
+                */
             }
    }
 }
@@ -456,11 +461,11 @@ def checkNotify(evt){
     
     def mainOn = mainState != "idle"
     
+    /*
     //quick recovery
     def mainTemp = tempSensors.currentValue("temperature").toFloat()
     def mainQuick = state.mainQuick
     def mainQuickChange = false
-    
     logger(30,"debug","checkNotify- quick recovery mainOn: ${mainOn}, isSetback: ${isSetback}")
     if (mainOn && !isSetback){
       	//mainTemp = tempFloat
@@ -473,14 +478,14 @@ def checkNotify(evt){
         mainQuick = tempBool
         logger(30,"debug","checkNotify- quick recovery active: ${mainQuick}, changed: ${mainQuickChange}")
     }
-  	
+  	*/
     
     //always update state vars
     state.mainState = mainState
     state.mainMode = mainMode
     state.mainCSP = mainCSP
     state.mainHSP = mainHSP
-    state.mainQuick = mainQuick
+    //state.mainQuick = mainQuick
     state.mainTemp = mainTemp
     
     //update cycle start data
@@ -493,19 +498,27 @@ def checkNotify(evt){
         state.endTime = now() + location.timeZone.rawOffset
         state.endTemp = mainTemp
     }
-    
-    
-    if (mainStateChange || mainModeChange || mainCSPChange || mainHSPChange || mainQuickChange){
-    	//[stat:[mainState:,mainMode:,mainCSP:,mainHSP:,mainOn:]
-        if (mainStateChange) logger(10,"info","Main HVAC state changed to: ${mainState}")
-        if (mainModeChange) logger(10,"info","Main HVAC mode changed to: ${mainMode}")
-        if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${mainCSP}")
-        if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${mainHSP}")
-        if (mainQuickChange) logger(10,"info","Quick recovery mode changed to: ${mainQuick}")
-        
-    	def dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn,delay:delay,mainQuick:mainQuick,mainQuickChange:mainQuickChange]]
-    	logger(30,"debug","dataSet: ${dataSet}")
-		notifyZones(dataSet)
+    if (mainStateChange || mainModeChange || mainCSPChange || mainHSPChange){
+    	def dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn]]
+        if (dataSet == state.dataSet){
+        	//dup dataset..., should never ever happen
+            logger(30,"warn","duplicate dataset, zones will not be notified... dataSet: ${state.dataSet}")
+        } else {
+        	logger(30,"debug","dataSet: ${dataSet}")
+            if (mainStateChange) logger(10,"info","Main HVAC state changed to: ${mainState}")
+        	if (mainModeChange) logger(10,"info","Main HVAC mode changed to: ${mainMode}")
+        	if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${mainCSP}")
+        	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${mainHSP}")
+            state.dataSet = dataSet
+            if (delay > 0){
+				logger(10,"info", "Zone notification is scheduled in ${delaySeconds} delay")
+				runIn(delay,notifyZones)
+        	} else {
+        		notifyZones()
+        	}
+        }
+        //state.dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn]]
+    	//def dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn,delay:delay,mainQuick:mainQuick,mainQuickChange:mainQuickChange]]
     }
     logger(40,"debug","checkNotify:exit- ")
 }
@@ -522,10 +535,11 @@ def notifyZone(){
     return dataSet
 }
 
-def notifyZones(map){
-    logger(40,"debug","notifyZones:enter- map:${map}")
+def notifyZones(){
+    logger(40,"debug","notifyZones:enter- ")
+    def dataSet = state.dataSet
     childApps.each {child ->
-    	child.zoneEvaluate(map)
+    	child.zoneEvaluate(dataSet)
     }
     logger(40,"debug","notifyZones:exit- ")
 }
