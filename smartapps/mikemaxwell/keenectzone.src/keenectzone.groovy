@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.7
- 	
+ *  keenectZone 0.1.7a
+  
+  	0.1.7a 	minor notification changes
+    		fixed vo latency reporting
     0.1.7 	removed vo reporting
     		re-wrote switch handler
             re-wrote a bunch of stuff
@@ -82,10 +84,9 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.7"
+	state.vChild = "0.1.7a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
-    //subscribe(vents, "pressure", getAdjustedPressure)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
    	fetchZoneControlState()
@@ -211,7 +212,6 @@ def main(){
             	)  
 				
                 //advanced hrefs...
-                //def afTitle = "Advanced features: " + (vPolling ?  "Vent polling is [on]" : "Vent polling is [off]") + ', Log Level is ' + getLogLevel(settings.logLevel)
                 def afTitle = "Advanced features:"
 				def afDesc = '\n\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]") + '\n\t' + (sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]")
                 href( "advanced"
@@ -222,23 +222,8 @@ def main(){
             }
             /*
             //if (state.etf){
-            	section("Vent sizes"){
-					if (vents){
-  						//spin through sizing selections
-                    	vents.each{ vent ->
-                        	input(
-            					name			: vent.id
-                				,title			: vent.displayName + " size:"
-                				,multiple		: false
-                				,required		: true
-                				,type			: "enum"
-                    			,submitOnChange	: false
-                            	,options		: [["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
-            				) 
-                    	}
-                	}            
-            	}
-            //}
+
+			//}
             */
 	}
 }
@@ -261,18 +246,6 @@ def advanced(){
                     ,submitOnChange	: true
                     ,defaultValue	: false
             	)          
-         		/*
-         		def vpTitle = vPolling ?  "Vent polling is [on]" : "Vent polling is [off]" 
-          		input(
-            		name			: "vPolling"
-                	,title			: vpTitle 
-                	,multiple		: false
-                	,required		: false
-                	,type			: "bool"
-                    ,submitOnChange	: true
-                    ,defaultValue	: false
-            	) 
-                */
          		input(
             		name			: "logLevel"
                 	,title			: "IDE logging level" 
@@ -300,17 +273,6 @@ def advanced(){
 //zone control methods
 def zoneEvaluate(params){
 	logger(40,"debug","zoneEvaluate:enter-- parameters: ${params}")
-    //log.warn "params:${params}"
-	//param data structures
-    /*
-    [msg:stat, data:[mainState:heat, mainStateChange:false, mainMode:heat, mainModeChange:false, mainCSP:80.0, mainCSPChange:false, mainHSP:74.0, mainHSPChange:true, mainOn:true]]
-    [stat:[mainMode:heat|cool|auto,mainState:heat|cool|idle,mainCSP:,mainHSP:,mainOn:true|false]]
-    [msg:temp, data:[value:]]
-    [msg:vent, data:[value:]]
-    [msg:"zoneSwitch", data:[zoneIsEnabled:true|false]]
-    [msg:pressure, data:[value:,isOK:true|false]]
-    [msg:self, data:[evt:"updated"]]
-    */
 	
     // variables
     def evaluateVents = false
@@ -322,13 +284,10 @@ def zoneEvaluate(params){
 	def mainHSPLocal = state.mainHSP  ?: 0
 	def mainCSPLocal = state.mainCSP  ?: 0
 	def mainOnLocal = state.mainOn  ?: ""
-    //def mainQuickLocal =  state.mainQuick ?: false
-    //need new var for quickRecoveryActive == 
     if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null ){
     	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal}"
     }
  	//zone states    
-    //def zoneDisablePendingLocal = state.zoneDisablePending ?: false
 	def zoneDisabledLocal = fetchZoneControlState()
     def runningLocal
     
@@ -338,8 +297,6 @@ def zoneEvaluate(params){
     def heatOffsetLocal = settings.heatOffset.toInteger()
     def maxVoLocal = settings.maxVo.toInteger()
     def minVoLocal = settings.minVo.toInteger() 
-    
-    
 
    	if (coolOffsetLocal == null || heatOffsetLocal == null ){ //|| maxVoLocal == null || minVoLocal == null){
     	log.warn "one or more local inputs are null, coolOffset:${coolOffsetLocal} heatOffset:${heatOffsetLocal} " //maxVo:${maxVoLocal} minVo:${minVoLocal}"
@@ -370,7 +327,6 @@ def zoneEvaluate(params){
                 //initial request for info during app install and zone update
                 if (data.initRequest){
                 	if (!zoneDisabledLocal) evaluateVents = data.mainOn
-                    //log.info "zoneEvaluate- init zone request, evaluateVents: ${evaluateVents}"
                 //set point changes, ignore setbacks
                 } else if (data.mainOn && (mainHSPLocal < data.mainHSP || mainCSPLocal > data.mainCSP)) {
                     evaluateVents = true
@@ -380,8 +336,6 @@ def zoneEvaluate(params){
                 	//system start up
                 	if (data.mainOn && !zoneDisabledLocal){
                         evaluateVents = true
-                        
-                        //logger(30,"info","zoneEvaluate- system start up, evaluate: ${evaluateVents}, vent polling started: ${vPolling}")
                         logger(30,"info","zoneEvaluate- system start up, evaluate: ${evaluateVents}")
                         logger(10,"info","Main HVAC is on and ${data.mainState}ing")
                         
@@ -424,25 +378,21 @@ def zoneEvaluate(params){
                 mainOnLocal = data.mainOn
                 zoneCSPLocal = mainCSPLocal + coolOffsetLocal
                 zoneHSPLocal = mainHSPLocal + heatOffsetLocal
-                
         	break
         case "temp" :
                 if (!zoneDisabledLocal){
                 	logger(30,"debug","zoneEvaluate- zone temperature changed, zoneTemp: ${zoneTempLocal}")
                 	evaluateVents = true
                 } else {
-                	//logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
                     logger(30,"warn", "Zone temp change ignored, zone is disabled")
                 }
         	break
         case "vent" :
         		logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
-                
         	break
         case "zoneSwitch" :
                 //fire up zone since it was activated
                 if (!zoneDisabledLocal){
-                	//zoneDisabledLocal = false
                 	evaluateVents = true
                 //shut it down with options
                 } else {
@@ -458,10 +408,8 @@ def zoneEvaluate(params){
                 	runningLocal = false
                     
                     //check zone vent close options from zone
-                    //def delaySeconds = 0
                     def zoneCloseOption = settings.ventCloseWait.toInteger()
                     if (zoneCloseOption != -1){
-                       	//delaySeconds = zoneCloseOption
        					if (zoneCloseOption == 0){
                 			logger(10,"warn", "Vents closed via close vents option")
         					setVents(0)
@@ -478,10 +426,7 @@ def zoneEvaluate(params){
         	break
         //no longer used???...
         case "self" :
-        		//[msg:self, data:[settingsChanged:true|false]
-        		//logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
                 if (data.settingsChanged){
-                	//[msg:"self", data:[maxVo:maxVo.toInteger(),minVo:minVo.toInteger(),coolOffset:coolOffset.toInteger(),heatOffset:heatOffset.toInteger()]]
                 	logger(30,"debug","zoneEvaluate- zone settingsChanged, data: ${data}")
                 	evaluateVents = true
                 }
@@ -518,7 +463,6 @@ def zoneEvaluate(params){
     state.zoneCSP = zoneCSPLocal
     state.zoneHSP = zoneHSPLocal
     state.zoneTemp = zoneTempLocal
-    //state.mainQuick = mainQuickLocal
 	state.zoneDisabled = zoneDisabledLocal
   
     if (evaluateVents){
@@ -551,7 +495,6 @@ def zoneEvaluate(params){
     }
     //write state
  	state.running = runningLocal
-    
 
     logger(40,"debug","zoneEvaluate:exit- ")
 }
@@ -561,31 +504,33 @@ def levelHandler(evt){
 	logger(40,"debug","levelHandler:enter- ")
 	//logger(30,"debug","levelHandler- evt name: ${evt.name}, value: ${evt.value}, rdLen: ${evt.description == ""}")
     
-    //def ventData = state."${evt.deviceId}"
+    logger(40,"debug","id: ${evt.deviceId}, ventState: ${state."${evt.deviceId}"}")
+    
+    def ventData = state."${evt.deviceId}"
     def v = evt.value.toFloat().round(0).toInteger()
     def t = evt.date.getTime()
-    if (state."${evt.deviceId}" != null){
+    if (ventData){
         //request
         if (evt.description == ""){
-			state."${evt.deviceId}".voRequest = v	
-            state."${evt.deviceId}".voRequestTS = t
+			ventData.voRequest = v	
+            ventData.voRequestTS = t
             logger(30,"debug","levelHandler- request vo: ${v} t: ${t}")
 		//response
 		} else {
-        	state."${evt.deviceId}".voResponse = v
-            state."${evt.deviceId}".voResponseTS = t
-            state."${evt.deviceId}".voTTC = ((t - state."${evt.deviceId}".voRequestTS) / 1000).toFloat().round(1)
-            logger(30,"debug","levelHandler- response vo: ${v} t: ${t} voTTC: ${voTTC}")
+        	ventData.voResponse = v
+            ventData.voResponseTS = t
+            ventData.voTTC = ((t - ventData.voRequestTS) / 1000).toFloat().round(1)
+            logger(30,"debug","levelHandler- response vo: ${v} t: ${t} voTTC: ${ventData.voTTC}")
         }
-        state."${evt.deviceId}" = ventData
+        //state."${evt.deviceId}" = ventData
     } else {
     	//request
     	if (evt.description == ""){
-    		state."${evt.deviceId}" =  [voRequest:v,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+    		ventData =  [voRequest:v,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
             logger(30,"debug","levelHandler-init request vo: ${v} t: ${t}")
         //response
         } else {
-        	state."${evt.deviceId}" =  [voRequest:null,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+        	ventData =  [voRequest:null,voRequestTS:null,voResponse:t,voResponseTS:v,voTTC:null] 
             logger(30,"debug","levelHandler-init response vo: ${v} t: ${t}")
         }
     }
@@ -611,72 +556,7 @@ def tempHandler(evt){
     if (state.mainOn){
     	logger(30,"debug","tempHandler- tempChange, value: ${evt.value}")
     	zoneEvaluate([msg:"temp", data:["tempChange"]])	
-    } //else {
-    //	calcTempOffset()
-    //}
-    
-}
-
-def getAdjustedPressure(evt){
-	logger(40,"debug","getAdjustedPressure:enter- ")
-	if (state.mainOn || (vPolling == true)){
-    	logger(30,"info","getAdjustedPressure- evt name: ${evt.name}, value: ${evt.value}")
-    	def vid = evt.deviceId
-        def vent = vents.find{it.id == vid}
-        
-     	def stdT = 273.15 //standard temperature, kelvin
-    	def stdP = 101325.0 //standard pressure, pascal
-        def stdD = 1.2041 //standard air density, kg/m3
-        def vo = vent.currentValue("level").toFloat().round(0).toInteger()
-   		def P1 = vent.currentValue("pressure").toFloat()
-        def T = vent.currentValue("temperature").toFloat()
-		def T1 = tempToK(T)
-       	def pAdjusted = ((P1 * stdT)/T1) //pascal
-        def pVelocity = Math.sqrt((2 * P1)/stdD).round(0).toInteger()
-        def pVelocityAdjusted = Math.sqrt((2 * pAdjusted)/stdD).round(0).toInteger()
-        
-        def roAdj
-        def roAct
-        def vAdj
-        def vAct
-        if (state."${vid}"){
-        	roAdj = (state."${vid}".pInitAdj ?: pAdjusted) - pAdjusted
-            roAct = (state."${vid}".pInitAct ?: P1) - P1
-            vAdj = (state."${vid}".vInitAdj ?: pVelocityAdjusted) - pVelocityAdjusted
-            vAct = (state."${vid}".vInitAct ?: pVelocity) - pVelocity
-        }
-        logger(15,"debug","getAdjustedPressure- [${vent.displayName}] monitor~ roAdj: ${roAdj.round(1)}, roAct: ${roAct.round(1)}, vAdj: ${vAdj}, vAct: ${vAct}, adjusted~ p: ${pAdjusted.round(0).toInteger()} Pa, v: ${pVelocityAdjusted}, actuals~ p: ${P1.round(0).toInteger()} Pa, v: ${pVelocity}, vo: ${vo}%, mainOn: ${state.mainOn}")
-        //logger(15,"debug","getAdjustedPressure- [${vent.displayName}] monitor~ roAdj: ${roAdj.round(1)}, roAct: ${roAct.round(1)}  adjusted~ pressure: ${pAdjusted.round(0).toInteger()} Pa, pressure: ${P1.round(0).toInteger()} Pa, vo: ${vo}%, mainOn: ${state.mainOn}")
-    }
-    logger(40,"debug","getAdjustedPressure:exit- ")
-}
-
-def getInitialPressure(){
-	//logger(15,"info","Getting startup pressures...")
-    def stdT = 273.15 //standard temperature, kelvin
-   	def stdP = 101325.0 //standard pressure, pascal
-   	def stdD = 1.2041 //standard air density, kg/m3
-
-	vents.each{ vent ->
-    	def vo = vent.currentValue("level").toFloat().round(0).toInteger()
-   		def P1 = vent.currentValue("pressure").toFloat()
-        def T = vent.currentValue("temperature").toFloat()
-		def T1 = tempToK(T)
-       	def pAdjusted = ((P1 * stdT)/T1) //pascal
-        def pVelocity = Math.sqrt((2 * P1)/stdD).round(0).toInteger()
-        def pVelocityAdjusted = Math.sqrt((2 * pAdjusted)/stdD).round(0).toInteger()
-        
-        //logger(15,"warn","getInitialPressure- [${vent.displayName}] adjusted~ pressure: ${pAdjusted.round(0).toInteger()} Pa, velocity: ${pVelocityAdjusted} m/s, actuals~ temp: ${T1} K, pressure: ${P1.round(0).toInteger()} Pa, velocity: ${pVelocity} m/s, vo: ${vo}%, mainOn: ${state.mainOn}")
-        logger(15,"warn","getInitialPressure- [${vent.displayName}] start~ roAdj: ${pAdjusted.round(0).toInteger()}, roAct: ${P1.round(0).toInteger()}, vAdj: ${pVelocityAdjusted}, vAct: ${pVelocity}, adjusted~ p: ${pAdjusted.round(0).toInteger()} Pa, actuals~ p: ${P1.round(0).toInteger()} Pa, vo: ${vo}%")
-        if (state."${vent.id}" != null){
-        	state."${vent.id}".pInitAdj = pAdjusted.round(0).toInteger()
-            state."${vent.id}".pInitAct = P1.round(0).toInteger()
-            state."${vent.id}".vInitAdj = pVelocityAdjusted
-            state."${vent.id}".vInitAct = pVelocity
-        } else {
-        	state."${vent.id}" = [pInitAdj:pAdjusted.round(0).toInteger(),pInitAct:P1.round(0).toInteger(),vInitAdj:pVelocityAdjusted,vInitAct:pVelocity,voRequest:"",voActual:""]
-        }
-    }
+    }     
 }
 
 //misc utility methods
@@ -791,18 +671,6 @@ def tempStr(temp){
     else return "No data available yet."
 }
 
-def tempToK(ct){
-   	def K
-   	if (state.tempScale == "F"){
-		//F to K: [K] = ([°F] + 459.67) × 5⁄9
-        K = ((ct + 459.67) * 5) / 9
-    } else {
-    	//C to K: [K] = [°C] + 273.15
-        K = ct + 273.15
-    }
-	return K.toInteger()        
-}
-
 //dynamic page input helpers
 
 def minVoptions(){
@@ -861,9 +729,8 @@ def getZoneState(){
     def s 
     if (state.running == true) s = true
     else s = false
-    //settings.quickRecovery state.mainQuick
     def qr = false
-    if (settings.quickRecovery && state.mainQuick && s) qr = true
+    if (settings.quickRecovery && state.quickRecoveryActive && s) qr = true
     def report =  "\n\trunning: ${s}\n\tqr active: ${qr}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}"
     vents.each{ vent ->
  		def b = vent.currentValue("battery")
@@ -887,64 +754,3 @@ def getZoneState(){
 def getZoneTemp(){
 	return state.zoneTemp
 }
-
-def getZoneSI(){
-	def report
-    def totalSI = 0.0
-    def crntSI = 0.0
-    def minSI = 0.0
-    def maxSI = 0.0
-    vents.each{ vent ->
-		if (settings."${vent.id}"){
-        	def vsi = settings."${vent.id}".toInteger() ?: 0
-            def crntVo = vent.currentValue("level").toInteger()
-			totalSI = totalSI + vsi
-            crntSI = crntSI + (crntVo * vsi) / 100
-        }
-    }
-    minSI = (totalSI * settings.minVo.toInteger()) / 100
-    maxSI = (totalSI * settings.maxVo.toInteger()) / 100
-    //report = ": totalSI: ${totalSI} minSI: ${minSI} maxSI: ${maxSI} crntSI: ${crntSI}"
-    report = [totalSI:totalSI,minSI:minSI,maxSI:maxSI,crntSI:crntSI]
-    return report
-}
-
-def initTempOffset(){
-	def t = tempSensors.currentValue("temperature").toFloat()
-    def st = now()
-    if (state."${tempSensors.id}"){
-    	//update
-        state."${tempSensors.id}".zoneStartTime = st
-        state."${tempSensors.id}".zoneStartTemp = t
-        state."${tempSensors.id}".tempOffset = null
-        state."${tempSensors.id}".timeOffset = null
-    } else {
-    	//init from scratch
-        state."${tempSensors.id}" = [zoneStartTime:st,zoneStartTemp:t,tempOffset:null,timeOffset:null] 
-        //log.debug "initTempOffset: ${state."${tempSensors.id}"}"
-    }
-}
-
-def calcTempOffset(){
-	def t = tempSensors.currentValue("temperature").toFloat()
-    def st = now()
-    //log.debug "calcTempOffset: ${state."${tempSensors.id}"} st: ${st} t: ${t}"
-    if (state."${tempSensors.id}"){
-    	//update
-        if (t > state."${tempSensors.id}".zoneStartTemp){
-        	state."${tempSensors.id}".tempOffset = (t - state."${tempSensors.id}".zoneStartTemp).round(2)
-        	state."${tempSensors.id}".timeOffset = st - state."${tempSensors.id}".zoneStartTime        	
-        }
-    } 
-    log.debug "calcTempOffset: ${state."${tempSensors.id}"} crntTemp: ${t}"
-}
-/*
-	//spit out some time testing...
-    def startTime = now() //epocMS, UTC
-    def startTimeLocal = startTime + location.timeZone.rawOffset //epocMS, Local TZ
-    def startTimeString = new Date(startTime).format("yyyy-MM-dd HH:mm")
-    def startTimeStringLocal = new Date(startTimeLocal).format("yyyy-MM-dd HH:mm")
-    log.info "times- startTime:${startTime} startTimeString:${startTimeString} startTimeLocal:${startTimeLocal} startTimeStringLocal:${startTimeStringLocal}"
-
-
-*/
