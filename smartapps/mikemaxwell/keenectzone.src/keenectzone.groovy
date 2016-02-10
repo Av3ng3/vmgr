@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.7a
+ *  keenectZone 0.1.7b
   
+  	0.1.7b	corrected QR notification backwordness
+    		added fixed temp control option
   	0.1.7a 	minor notification changes
     		fixed vo latency reporting
     0.1.7 	removed vo reporting
@@ -84,7 +86,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.7a"
+	state.vChild = "0.1.7b"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -150,37 +152,70 @@ def main(){
                     ,submitOnChange	: true
             	) 
                 if (minVo){
-				input(
-            		name			: "maxVo"
-                	,title			: "Maximum vent opening"
-                	,multiple		: false
-                	,required		: true
-                	,type			: "enum"
-                    ,options		: maxVoptions()
-                    ,defaultValue	: "100"
-                    ,submitOnChange	: true
-            	) 
+					input(
+            			name			: "maxVo"
+                		,title			: "Maximum vent opening"
+                		,multiple		: false
+                		,required		: true
+                		,type			: "enum"
+                    	,options		: maxVoptions()
+                    	,defaultValue	: "100"
+                    	,submitOnChange	: true
+            		) 
                 }
-				input(
-            		name			: "heatOffset"
-                	,title			: "Heating offset, (above or below main thermostat)"
-                	,multiple		: false
-                	,required		: true
-                	,type			: "enum"
-                    ,options 		: zoneTempOptions()
-                    ,defaultValue	: "0"
-                    ,submitOnChange	: false
-            	) 
-				input(
-            		name			: "coolOffset"
-                	,title			: "Cooling offset, (above or below main thermostat)"
-                	,multiple		: false
-                	,required		: true
-                	,type			: "enum"
-                    ,options 		: zoneTempOptions()
-                    ,defaultValue	: "0"
-                    ,submitOnChange	: false
-            	)
+                input(
+                	name			: "zoneControlType"
+                    ,title			: "Temperature control type"
+                    ,multiple		: false
+                    ,required		: true
+                    ,type			: "enum"
+                    ,options		: [["offset":"Offset from Main set point"],["fixed":"Fixed"]]
+                    ,defaultValue	: "offset"
+                    ,submitOnChange	: true
+                )
+                if (zoneControlType == "offset"){
+					input(
+            			name			: "heatOffset"
+                		,title			: "Heating offset, (above or below main thermostat)"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                    	,options 		: zoneTempOptions()
+                    	,defaultValue	: "0"
+                    	,submitOnChange	: false
+            		) 
+					input(
+            			name			: "coolOffset"
+                		,title			: "Cooling offset, (above or below main thermostat)"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                    	,options 		: zoneTempOptions()
+                    	,defaultValue	: "0"
+                    	,submitOnChange	: false
+            		)
+                } else {
+                	input(
+            			name			: "staticHSP"
+                		,title			: "Heating set point"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                    	,options 		: zoneFixedOptions()
+                    	,defaultValue	: "70"
+                    	,submitOnChange	: false
+            		) 
+                    input(
+            			name			: "staticCSP"
+                		,title			: "Cooling set point"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                    	,options 		: zoneFixedOptions()
+                    	,defaultValue	: "70"
+                    	,submitOnChange	: false
+            		) 
+                }
             }
 
             section("Options"){
@@ -301,8 +336,14 @@ def zoneEvaluate(params){
    	if (coolOffsetLocal == null || heatOffsetLocal == null ){ //|| maxVoLocal == null || minVoLocal == null){
     	log.warn "one or more local inputs are null, coolOffset:${coolOffsetLocal} heatOffset:${heatOffsetLocal} " //maxVo:${maxVoLocal} minVo:${minVoLocal}"
     }    
+    //set it here depending on zoneControlType
     def zoneCSPLocal = mainCSPLocal + coolOffsetLocal
     def zoneHSPLocal = mainHSPLocal + heatOffsetLocal
+    if (zoneControlType == "fixed"){
+    	zoneCSPLocal = settings.staticCSP.toInteger()
+        zoneHSPLocal = settings.staticHSP.toInteger()
+    }
+  
 
     
     switch (msg){
@@ -376,8 +417,11 @@ def zoneEvaluate(params){
                 mainHSPLocal = data.mainHSP
                 mainCSPLocal = data.mainCSP
                 mainOnLocal = data.mainOn
-                zoneCSPLocal = mainCSPLocal + coolOffsetLocal
-                zoneHSPLocal = mainHSPLocal + heatOffsetLocal
+                //set it again here, or rather ignore if type is fixed...
+                if (zoneControlType == "offset"){
+                	zoneCSPLocal = mainCSPLocal + coolOffsetLocal
+                	zoneHSPLocal = mainHSPLocal + heatOffsetLocal
+                }
         	break
         case "temp" :
                 if (!zoneDisabledLocal){
@@ -439,14 +483,14 @@ def zoneEvaluate(params){
     	if (mainStateLocal == "heat"){
     		tempBool = (zoneTempLocal + 2) <= zoneHSPLocal
             if (state.quickRecoveryActive != tempBool){
-            	if (state.quickRecoveryActive) logger(10,"info","Zone entered quick recovery mode.")
+            	if (tempBool) logger(10,"info","Zone entered quick recovery mode.")
             	else logger(10,"info","Zone exited quick recovery mode.")
             }
             state.quickRecoveryActive = tempBool
     	} else if (mainStateLocal == "cool") {
         	tempBool = (zoneTempLocal - 2) >= zoneCSPLocal
             if (state.quickRecoveryActive != tempBool){
-                if (state.quickRecoveryActive) logger(10,"info","Zone entered quick recovery mode.")
+                if (tempBool) logger(10,"info","Zone entered quick recovery mode.")
             	else logger(10,"info","Zone exited quick recovery mode.")
             }
             state.quickRecoveryActive = tempBool
@@ -688,7 +732,6 @@ def maxVoptions(){
 }
 
 def getLogLevels(){
-	//return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"],["15":"Pressure only"]]
     return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"]]
 }
 
@@ -700,6 +743,26 @@ def getLogLevel(val){
         logLvl = logLvl."${val}".value
     }
     return '[' + logLvl + ']'
+}
+
+def zoneFixedOptions(){
+	def opts = []
+    def start
+    if (!state.tempScale) state.tempScale = location.temperatureScale
+	if (state.tempScale == "F"){
+    	//zo = [["60":"5°F"],["4":"4°F"],["3":"3°F"],["2":"2°F"],["1":"1°F"],["0":"0°F"],["-1":"-1°F"],["-2":"-2°F"],["-3":"-3°F"],["-4":"-4°F"],["-5":"-5°F"]]
+    	start = 60
+        start.step 81, 1, {
+   			opts.push(["${it}":"${it}°F"])
+		}
+    } else {
+    	start = 15
+        start.step 27, 1, {
+   			opts.push(["${it}":"${it}°C"])
+		}
+    	//zo = [["5":"5°C"],["4":"4°C"],["3":"3°C"],["2":"2°C"],["1":"1°C"],["0":"0°C"],["-1":"-1°C"],["-2":"-2°C"],["-3":"-3°C"],["-4":"-4°C"],["-5":"-5°C"]]
+    }
+	return opts
 }
 
 def zoneTempOptions(){

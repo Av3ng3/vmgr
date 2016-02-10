@@ -1,6 +1,6 @@
 /**
  *  Keenect 0.1.7
- 	 
+ 	
     0.1.7 	removed vo reporting
     		re-wrote switch handler
             removed close vent option
@@ -146,74 +146,6 @@ def main(){
                    		,defaultValue	: "0"
             		)             
             }
-            /*
-            //if (state.etf){
-            	//[["40":"4x10"],["48":"4x12"],["60":"6x10"],["72":"6x12"]]
-            	section("Non Keen vent sizes"){
-					input(
-            			name			: "v20"
-                		,title			: "Number of 2x10 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["20":"1"],["40":"2"],["60":"3"],["80":"4"],["100":"5"],["120":"6"],["140":"7"],["160":"8"],["180":"9"],["200":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-					input(
-            			name			: "v40"
-                		,title			: "Number of 4x10 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["40":"1"],["80":"2"],["120":"3"],["160":"4"],["200":"5"],["240":"6"],["280":"7"],["320":"8"],["360":"9"],["400":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-					input(
-            			name			: "v48"
-                		,title			: "Number of 4x12 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["48":"1"],["96":"2"],["144":"3"],["192":"4"],["240":"5"],["288":"6"],["336":"7"],["384":"8"],["432":"9"],["480":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-					input(
-            			name			: "v56"
-                		,title			: "Number of 4x14 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["56":"1"],["112":"2"],["168":"3"],["224":"4"],["280":"5"],["336":"6"],["392":"7"],["448":"8"],["504":"9"],["560":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-					input(
-            			name			: "v60"
-                		,title			: "Number of 6x10 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["60":"1"],["120":"2"],["180":"3"],["240":"4"],["300":"5"],["360":"6"],["420":"7"],["480":"8"],["540":"9"],["600":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-					input(
-            			name			: "v72"
-                		,title			: "Number of 6x12 vents"
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                    	,submitOnChange	: false
-                       	,options		: [["0":"0"],["72":"1"],["144":"2"],["216":"3"],["288":"4"],["360":"5"],["732":"6"],["504":"7"],["576":"8"],["648":"9"],["720":"10"]]
-                        ,defaultValue	: "0"
-            		) 
-
-				}
-            //} 
-            */
             if (installed){
                 section (getVersionInfo()) { }
             }
@@ -299,13 +231,7 @@ def reporting(){
 				)  
                 /*
                 if (state.etf){
-                	report = "Percent open analysis"
-                	href( "report"
-						,title		: report
-						,description: ""
-						,state		: null
-						,params		: [rptName:report]
-					)  
+ 
                 }
                 */
             }
@@ -368,7 +294,6 @@ def getReport(rptName){
     if (standardReport){
     	def sorted = childApps.sort{it.label}
     	sorted.each{ child ->
-    		//log.debug "getting child report for: ${child.label}"
        		try {
     			def report = child."${cMethod}"()
        			reports = reports + "Zone: " + child.label + "${report}" + "\n"
@@ -377,34 +302,7 @@ def getReport(rptName){
         }
     } else {
     	//non standard reports
-    	if (rptName == "Percent open analysis"){
-    		cMethod = "getZoneSI"
-        	def totalSI = v20.toInteger() + v40.toInteger() + v48.toInteger() + v56.toInteger() + v60.toInteger() + v72.toInteger()
-        	def minSI = 0.0
-        	def maxSI = 0.0
-        	def crntSI = 0.0
-        	childApps.each{ child ->
-    			/*
-            	[totalSI:totalSI,minSI:minSI,maxSI:maxSI,crntSI:crntSI]
-				v56 is total non
-            	*/
-       			try {
-    				def data = child."${cMethod}"()
-                	totalSI = totalSI + data.totalSI
-       				minSI = minSI + data.minSI
-                	maxSI = maxSI + data.maxSI
-                	crntSI = crntSI + data.crntSI
-       			}
-       			catch(e){}
-    		}
-            def pctMin = ((minSI / totalSI) * 100).toInteger()
-            def pctMax = ((maxSI / totalSI) * 100).toInteger() 
-            def pctCrnt = ((crntSI / totalSI) * 100).toInteger()
-        	//actual report output
-        	//reports = reports + "Zone: " + child.label + "${report}" + "\n"
-            //reports = "totalSI: ${totalSI}\nminSI: ${minSI}\nmaxSI: ${maxSI}\ncrntSI: ${crntSI}\npctMin: ${pctMin}%\npctMax: ${pctMax}%\npctCrnt: ${pctCrnt}%\n"
-            reports = "All vents at minimum\n\t${pctMin}%\nAll vents at maximum\n\t${pctMax}%\nCurrently\n\t${pctCrnt}%\n"
-    	}
+ 
 	}
     return reports
 }
@@ -572,58 +470,6 @@ def getNormalizedOS(os){
     return normOS
 }
 
-def statHandler(evt){
-	log.info "event:${evt.value}"
-
-    def key = evt.date.format("yyyy-MM-dd HH:mm:ss")
-    def v  = evt.value
-    def evtTime = evt.date.getTime()
-    if (v == "heating"){
-        state.lastCalibrationStart = key
-        state.startTime = evtTime
-        state.startTemp = tempSensors.currentValue("temperature")
-        log.info "start -time:${state.startTime} -temp:${state.startTemp}"
-    	if (!state.lastDPH){
-        	state.lastDPH = 0	
-        } else {
-        	state.crntDtemp = tStat.currentValue("heatingSetpoint") -  state.startTemp
-            state.estDtime = state.crntDtemp / state.lastDPH
-            
-        }
-    } else if (v == "idle" && state.startTime) {
-    	//end
-        state.endTime = evtTime
-        def BigDecimal dTime = (state.endTime - state.startTime) / 3600000
-        state.endTemp = tempSensors.currentValue("temperature")
-        log.info "end -time:${state.endTime} -temp:${state.endTemp}"
-        if (state.runTimes.size == 0){
-        	state.runTimes = ["${key}":"runTime:${dTime} startTemp:${state.startTemp} endTemp:${state.endTemp}"]
-        } else {
-        	state.runTimes << ["${key}":"runTime:${dTime} startTemp:${state.startTemp} endTemp:${state.endTemp}"]
-        }
-        if (state.endTime > state.startTime && state.endTemp > state.startTemp ){
-        	def BigDecimal dTemp  = (state.endTemp - state.startTemp)
-            
-            def BigDecimal dph = dTemp / dTime
-            if (dTime >= 0.5) {
-               	def value = ["CurrentDPH":"${dph}","lastDPH":"${state.lastDPH}" ,"ActualRunTime":"${dTime}","EstimatedRunTime":"${state.estDtime}" ,"ActualTempRise":"${dTemp}","EstimatedTempRise":"${state.crntDtemp}"]
-        		log.info "${value}"
-            	if (state.runMaps.size == 0){
-            		state.runMaps = ["${key}":"${value}"]
-            	} else {
-            		state.runMaps << ["${key}":"${value}"]
-            	}
-            }
-            state.lastDPH = dph
-            state.endTime = ""
-            state.startTime = ""
-            state.endTemp = ""
-            state.startTemp = ""
-        }
-        
-    }
-}
-
 def getVersionInfo(){
 	return "Versions:\n\tKeenect: ${state.vParent}\n\tkeenectZone: ${state.vChild ?: "No data available yet."}"
 }
@@ -636,14 +482,6 @@ def tempStr(temp){
     def tc = state.tempScale ?: location.temperatureScale
     if (temp) return "${temp.toString()}°${tc}"
     else return "No data available yet."
-}
-
-def getSelectedDevices(deviceList){
-	def deviceIDS = []
-    deviceList.each{ device ->
-    	deviceIDS.add(device.id)
-    }
-	return deviceIDS
 }
 
 def logger(displayLevel,errorLevel,text){
@@ -670,11 +508,7 @@ def logger(displayLevel,errorLevel,text){
         	text = "Main:" + today + ": " + text
         	sendNotificationEvent(text) //sendEvent(name: "kvParent", value: text, descriptionText: text, isStateChange : true)
         }
-        //sendEvent(name: app.label , value: text, descriptionText: text, isStateChange : true)
     }
-    //now()
-    //def today = new Date() .format("yyyy-MM-dd HH:mm:ss")
-
 }
 
 def getLogLevel(val){
@@ -688,7 +522,6 @@ def getLogLevel(val){
 }
 
 def getLogLevels(){
-	//return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"],["15":"Pressure only"]]
     return [["0":"None"],["10":"Lite"],["20":"Moderate"],["30":"Detailed"],["40":"Super nerdy"]]
 }
 
