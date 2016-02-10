@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.7b
-  
+ *  keenectZone 0.1.7d
+  	
+    0.1.7d	added vent close on disable only option
+  	0.1.7c	updated config report for fixed temp option
   	0.1.7b	corrected QR notification backwordness
     		added fixed temp control option
   	0.1.7a 	minor notification changes
@@ -86,7 +88,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.7b"
+	state.vChild = "0.1.7d"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -219,7 +221,7 @@ def main(){
             }
 
             section("Options"){
-                def froTitle = 'Close vents at cycle end is '
+                def froTitle = 'Close vents options are '
                 if (!ventCloseWait || ventCloseWait == "-1"){
                 	froTitle = froTitle + "[off]"
                 } else {
@@ -231,7 +233,7 @@ def main(){
                 	,multiple		: false
                 	,required		: true
                 	,type			: "enum"
-                	,options		: [["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
+                	,options		: [["-2":"On disable only"],["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
                 	,submitOnChange	: true
                    	,defaultValue	: "-1"
             	)
@@ -454,13 +456,13 @@ def zoneEvaluate(params){
                     //check zone vent close options from zone
                     def zoneCloseOption = settings.ventCloseWait.toInteger()
                     if (zoneCloseOption != -1){
-       					if (zoneCloseOption == 0){
+       					if (zoneCloseOption == 0 || zoneCloseOption == -2){
                 			logger(10,"warn", "Vents closed via close vents option")
         					setVents(0)
         				} else if (zoneCloseOption > 0){
                 			logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
         					runIn(zoneCloseOption,delayClose)
-        				}                            
+        				} 
                     } 
                     logger(10,"info", "Zone was disabled, we won't be doing anything alse until it's re-enabled")
                 }
@@ -784,8 +786,10 @@ def getEndReport(){
 def getZoneConfig(){
 	//zoneControlSwitch
     def zc = "Not Activated" 
+    def zt = "heating offset: ${tempStr(heatOffset)}\n\tcooling offset: ${tempStr(coolOffset)}"
     if (zoneControlSwitch) zc = "is ${zoneControlSwitch.currentValue("switch")} via [${zoneControlSwitch.displayName}]"
-	return "\n\tVents: ${vents}\n\ttemp sensors: [${tempSensors}]\n\tminimum vent opening: ${minVo}%\n\tmaximum vent opening: ${maxVo}%\n\theating offset: ${tempStr(heatOffset)}\n\tcooling offset: ${tempStr(coolOffset)}\n\tzone control: ${zc}\n\tversion: ${state.vChild ?: "No data available yet."}"
+    if (zoneControlType == "fixed") zt = "heating set point: ${tempStr(staticHSP)}\n\tcooling setpoint: ${tempStr(staticCSP)}"
+	return "\n\tVents: ${vents}\n\ttemp sensors: [${tempSensors}]\n\tminimum vent opening: ${minVo}%\n\tmaximum vent opening: ${maxVo}%\n\t${zt}\n\tzone control: ${zc}\n\tversion: ${state.vChild ?: "No data available yet."}"
 }
 
 def getZoneState(){
