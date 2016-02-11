@@ -1,6 +1,7 @@
 /**
- *  keenectZone 0.1.7d
-  	
+ *  keenectZone 0.1.7e
+	
+    0.1.7e	fixed zone set point getting by zone disable...
     0.1.7d	added vent close on disable only option
   	0.1.7c	updated config report for fixed temp option
   	0.1.7b	corrected QR notification backwordness
@@ -88,7 +89,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.7d"
+	state.vChild = "0.1.7e"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -371,7 +372,7 @@ def zoneEvaluate(params){
                 if (data.initRequest){
                 	if (!zoneDisabledLocal) evaluateVents = data.mainOn
                 //set point changes, ignore setbacks
-                } else if (data.mainOn && (mainHSPLocal < data.mainHSP || mainCSPLocal > data.mainCSP)) {
+                } else if (data.mainOn && (mainHSPLocal < data.mainHSP || mainCSPLocal > data.mainCSP) && !zoneDisabledLocal) {
                     evaluateVents = true
                     logger(30,"info","zoneEvaluate- set point changes, evaluate: ${true}")
                 //system state changed
