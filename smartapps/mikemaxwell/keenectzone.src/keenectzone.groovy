@@ -1,6 +1,7 @@
 /**
- *  keenectZone 0.1.8
- 
+ *  keenectZone 0.1.8a
+ 	
+    0.1.8a	fixed issue with vent close running twice (once at main idle, and again via the zone disable and when idle)
 	0.1.8	hooks to support keenect hvac type selections
     		moved delay and disable switch options to the advanced page    		
     0.1.7e	fixed zone set point getting by zone disable...
@@ -90,7 +91,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.8"
+	state.vChild = "0.1.8a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -434,19 +435,19 @@ def zoneEvaluate(params){
                             d = d.round(1)
                         }
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"                    
-                    }
-                	runningLocal = false
-                    //check zone vent close options from zone
-                    def zoneCloseOption = settings.ventCloseWait.toInteger()
-                    if (zoneCloseOption != -1){
-       					if (zoneCloseOption == 0 || zoneCloseOption == -2){
-                			logger(10,"warn", "Vents closed via close vents option")
-        					setVents(0)
-        				} else if (zoneCloseOption > 0){
-                			logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
-        					runIn(zoneCloseOption,delayClose)
-        				} 
-                    } 
+						runningLocal = false
+                        //check zone vent close options from zone
+                    	def zoneCloseOption = settings.ventCloseWait.toInteger()
+                    	if (zoneCloseOption != -1){
+       						if (zoneCloseOption == 0 || zoneCloseOption == -2){
+                				logger(10,"warn", "Vents closed via close vents option")
+        						setVents(0)
+        					} else if (zoneCloseOption > 0){
+                				logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
+        						runIn(zoneCloseOption,delayClose)
+        					} 
+                    	}
+					} 
                     logger(10,"info", "Zone was disabled, we won't be doing anything alse until it's re-enabled")
                 }
         	break
