@@ -1,6 +1,8 @@
 /**
- *  keenectZone 0.1.7e
-	
+ *  keenectZone 0.1.8
+ 
+	0.1.8	hooks to support keenect hvac type selections
+    		moved delay and disable switch options to the advanced page    		
     0.1.7e	fixed zone set point getting by zone disable...
     0.1.7d	added vent close on disable only option
   	0.1.7c	updated config report for fixed temp option
@@ -85,15 +87,15 @@ def updated() {
 	log.debug "Updated with settings: ${settings}"
 	unsubscribe()
 	initialize()
-   
 }
 
 def initialize() {
-	state.vChild = "0.1.7e"
+	state.vChild = "0.1.8"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
+    state.isAC = parent.isAC()
    	fetchZoneControlState()
     zoneEvaluate(parent.notifyZone())
 }
@@ -128,21 +130,12 @@ def main(){
 				)
  				input(
             		name		: "tempSensors"
-                	,title		: "Temp Sensors:"
+                	,title		: "Temperature Sensor:"
                 	,multiple	: false
                 	,required	: true
                 	,type		: "capability.temperatureMeasurement"
                     ,submitOnChange	: false
             	) 
-                /* out for now...
-				input(
-            		name		: "motionSensors"
-                	,title		: "Motion Sensors:"
-                	,multiple	: true
-                	,required	: false
-                	,type		: "capability.motionSensor"
-            	)   
-                */
             }
             section("Settings"){
 				input(
@@ -187,16 +180,18 @@ def main(){
                     	,defaultValue	: "0"
                     	,submitOnChange	: false
             		) 
-					input(
-            			name			: "coolOffset"
-                		,title			: "Cooling offset, (above or below main thermostat)"
-                		,multiple		: false
-                		,required		: false
-                		,type			: "enum"
-                    	,options 		: zoneTempOptions()
-                    	,defaultValue	: "0"
-                    	,submitOnChange	: false
-            		)
+                    if (parent.isAC()){
+						input(
+            				name			: "coolOffset"
+                			,title			: "Cooling offset, (above or below main thermostat)"
+                			,multiple		: false
+                			,required		: false
+                			,type			: "enum"
+                    		,options 		: zoneTempOptions()
+                    		,defaultValue	: "0"
+                    		,submitOnChange	: false
+            			)
+                     }
                 } else {
                 	input(
             			name			: "staticHSP"
@@ -208,52 +203,35 @@ def main(){
                     	,defaultValue	: "70"
                     	,submitOnChange	: false
             		) 
-                    input(
-            			name			: "staticCSP"
-                		,title			: "Cooling set point"
-                		,multiple		: false
-                		,required		: false
-                		,type			: "enum"
-                    	,options 		: zoneFixedOptions()
-                    	,defaultValue	: "70"
-                    	,submitOnChange	: false
-            		) 
+                    if (parent.isAC()){
+                    	input(
+            				name			: "staticCSP"
+                			,title			: "Cooling set point"
+                			,multiple		: false
+                			,required		: false
+                			,type			: "enum"
+                    		,options 		: zoneFixedOptions()
+                    		,defaultValue	: "70"
+                    		,submitOnChange	: false
+                        )
+                    }
                 }
             }
-
-            section("Options"){
-                def froTitle = 'Close vents options are '
+            section("Advanced"){
+                //advanced hrefs...
+                //def afTitle = "Advanced features:"
+				def afDesc = '\t' + (quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]") 
+                def froTitle = 'Close vent options are '
                 if (!ventCloseWait || ventCloseWait == "-1"){
                 	froTitle = froTitle + "[off]"
                 } else {
                 	froTitle = froTitle + "[on]"
                 }
-            	input(
-            		name			: "ventCloseWait"
-                    ,title			: froTitle
-                	,multiple		: false
-                	,required		: true
-                	,type			: "enum"
-                	,options		: [["-2":"On disable only"],["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
-                	,submitOnChange	: true
-                   	,defaultValue	: "-1"
-            	)
-                
-            	def zcsTitle = zoneControlSwitch ? "Optional zone disable switch: when on, zone is enabled, when off, zone is disabled " : "Optional zone disable switch"
-                input(
-            		name			: "zoneControlSwitch"
-                	,title			: zcsTitle 
-                	,multiple		: false
-                	,required		: false
-                	,type			: "capability.switch"
-                    ,submitOnChange	: true
-            	)  
-				
-                //advanced hrefs...
-                def afTitle = "Advanced features:"
-				def afDesc = '\n\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]") + '\n\t' + (sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]")
+                afDesc = afDesc + "\n\t" + froTitle
+				def zcsTitle = zoneControlSwitch ? "Zone control switch: selected" : "Zone control switch: not selected"
+                afDesc = afDesc + "\n\t" + zcsTitle + "\n\tLog level is " + getLogLevel(settings.logLevel) + "\n\t" + (sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]")
                 href( "advanced"
-                    ,title			: afTitle
+                    ,title			: "" //afTitle
 					,description	: afDesc
 					,state			: null
 				)
@@ -284,6 +262,31 @@ def advanced(){
                     ,submitOnChange	: true
                     ,defaultValue	: false
             	)          
+              	def froTitle = 'Close vent options are '
+                if (!ventCloseWait || ventCloseWait == "-1"){
+                	froTitle = froTitle + "[off]"
+                } else {
+                	froTitle = froTitle + "[on]"
+                }
+            	input(
+            		name			: "ventCloseWait"
+                    ,title			: froTitle
+                	,multiple		: false
+                	,required		: true
+                	,type			: "enum"
+                	,options		: [["-2":"On disable only"],["-1":"Do not close"],["0":"Immediate"],["60":"After 1 Minute"],["120":"After 2 Minutes"],["180":"After 3 Minutes"],["240":"After 4 Minutes"],["300":"After 5 Minutes"]]
+                	,submitOnChange	: true
+                   	,defaultValue	: "-1"
+            	)
+            	def zcsTitle = zoneControlSwitch ? "Optional zone control switch: when on, zone is enabled, when off, zone is disabled " : "Optional zone control switch"
+                input(
+            		name			: "zoneControlSwitch"
+                	,title			: zcsTitle 
+                	,multiple		: false
+                	,required		: false
+                	,type			: "capability.switch"
+                    ,submitOnChange	: true
+            	)                  
          		input(
             		name			: "logLevel"
                 	,title			: "IDE logging level" 
@@ -320,54 +323,38 @@ def zoneEvaluate(params){
     def mainStateLocal = state.mainState ?: ""
     def mainModeLocal = state.mainMode ?: ""
 	def mainHSPLocal = state.mainHSP  ?: 0
-	def mainCSPLocal = state.mainCSP  ?: 0
+	def mainCSPLocal = state.mainCSP  ?: null
 	def mainOnLocal = state.mainOn  ?: ""
-    if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null ){
-    	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal}"
-    }
+    //if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null ){
+    //	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal}"
+    //}
  	//zone states    
 	def zoneDisabledLocal = fetchZoneControlState()
     def runningLocal
     
     //always fetch these since the zone ownes them
     def zoneTempLocal = tempSensors.currentValue("temperature").toFloat()
-    def coolOffsetLocal = settings.coolOffset.toInteger()
+    def coolOffsetLocal 
+    if (settings.coolOffset) settings.coolOffset = settings.coolOffset.toInteger()
     def heatOffsetLocal = settings.heatOffset.toInteger()
     def maxVoLocal = settings.maxVo.toInteger()
     def minVoLocal = settings.minVo.toInteger() 
 
-   	if (coolOffsetLocal == null || heatOffsetLocal == null ){ //|| maxVoLocal == null || minVoLocal == null){
-    	log.warn "one or more local inputs are null, coolOffset:${coolOffsetLocal} heatOffset:${heatOffsetLocal} " //maxVo:${maxVoLocal} minVo:${minVoLocal}"
-    }    
+   //	if (coolOffsetLocal == null || heatOffsetLocal == null ){ //|| maxVoLocal == null || minVoLocal == null){
+    //	log.warn "one or more local inputs are null, coolOffset:${coolOffsetLocal} heatOffset:${heatOffsetLocal} " //maxVo:${maxVoLocal} minVo:${minVoLocal}"
+    //}
+    
     //set it here depending on zoneControlType
-    def zoneCSPLocal = mainCSPLocal + coolOffsetLocal
+    def zoneCSPLocal 
+    if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal = (mainCSPLocal + coolOffsetLocal)
     def zoneHSPLocal = mainHSPLocal + heatOffsetLocal
     if (zoneControlType == "fixed"){
-    	zoneCSPLocal = settings.staticCSP.toInteger()
+    	if (mainCSPLocal && settings.staticCSP)	zoneCSPLocal = settings.staticCSP.toInteger()
         zoneHSPLocal = settings.staticHSP.toInteger()
     }
-  
-
     
     switch (msg){
     	case "stat" :
-        		/*
-                [msg:"stat",
-                data:[
-                	initRequest:false,
-                    mainState:mainState,
-                    mainStateChange:mainStateChange,
-                    mainMode:mainMode,
-                    mainModeChange:mainModeChange,
-                    mainCSP:mainCSP,
-                    mainCSPChange:mainCSPChange,
-                    mainHSP:mainHSP,
-                    mainHSPChange:mainHSPChange,
-                    mainOn:mainOn,
-                    delay:delay
-                    mainQuick: true|false
-                 ]]
-        		*/
                 //initial request for info during app install and zone update
                 if (data.initRequest){
                 	if (!zoneDisabledLocal) evaluateVents = data.mainOn
@@ -382,11 +369,9 @@ def zoneEvaluate(params){
                         evaluateVents = true
                         logger(30,"info","zoneEvaluate- system start up, evaluate: ${evaluateVents}")
                         logger(10,"info","Main HVAC is on and ${data.mainState}ing")
-                        
                     //system shut down
                     } else if (!data.mainOn && !zoneDisabledLocal){
                     	runningLocal = false
-                        //initTempOffset()
                         def asp = state.activeSetPoint
                         def d
                         if (zoneTempLocal && asp){
@@ -397,10 +382,8 @@ def zoneEvaluate(params){
                     	logger(10,"info","Main HVAC has shut down.")                        
                         
 						//check zone vent close options from zone
-                    	//def delaySeconds = 0
                     	def zoneCloseOption = settings.ventCloseWait.toInteger()
                     	if (zoneCloseOption != -1){
-                       		//delaySeconds = zoneCloseOption
        						if (zoneCloseOption == 0){
                 				logger(10,"warn", "Vents closed via close vents option")
         						setVents(0)
@@ -422,7 +405,7 @@ def zoneEvaluate(params){
                 mainOnLocal = data.mainOn
                 //set it again here, or rather ignore if type is fixed...
                 if (zoneControlType == "offset"){
-                	zoneCSPLocal = mainCSPLocal + coolOffsetLocal
+                    if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal =  (mainCSPLocal + coolOffsetLocal)
                 	zoneHSPLocal = mainHSPLocal + heatOffsetLocal
                 }
         	break
@@ -453,7 +436,6 @@ def zoneEvaluate(params){
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"                    
                     }
                 	runningLocal = false
-                    
                     //check zone vent close options from zone
                     def zoneCloseOption = settings.ventCloseWait.toInteger()
                     if (zoneCloseOption != -1){
@@ -551,7 +533,7 @@ def levelHandler(evt){
 	logger(40,"debug","levelHandler:enter- ")
 	//logger(30,"debug","levelHandler- evt name: ${evt.name}, value: ${evt.value}, rdLen: ${evt.description == ""}")
     
-    logger(40,"debug","id: ${evt.deviceId}, ventState: ${state."${evt.deviceId}"}")
+    //logger(40,"debug","id: ${evt.deviceId}, ventState: ${state."${evt.deviceId}"}")
     
     def ventData = state."${evt.deviceId}"
     def v = evt.value.toFloat().round(0).toInteger()
@@ -642,14 +624,13 @@ def logger(displayLevel,errorLevel,text){
     if (logLevel) logL = logLevel.toInteger()
     
     if (logL == 0) {return}//bail
-    //else if (logL == 15 && displayLevel == 15) log."${errorLevel}"(text)
     else if (logL >= displayLevel){
     	log."${errorLevel}"(text)
         if (sendEventsToNotifications && displayLevel == 10){
         	def nixt = now() + location.timeZone.rawOffset
         	def today = new Date(nixt).format("HH:mm:ss.Ms")
         	text = today + ": " + text
-        	sendNotificationEvent(app.label + ": " + text) //sendEvent(name: app.label , value: text, descriptionText: text, isStateChange : true)
+        	sendNotificationEvent(app.label + ": " + text) 
         }
     }
  }
@@ -657,7 +638,6 @@ def logger(displayLevel,errorLevel,text){
 def setVents(newVo){
 	logger(40,"debug","setVents:enter- ")
 	logger(30,"warn","setVents- newVo: ${newVo}")
-	//state.voRequest = newVo
     def result = ""
     def changeRequired = false
     
@@ -677,7 +657,6 @@ def setVents(newVo){
             if currentLevel is +/- 5 of requested level, call it good
             otherwise reset it
 		*/
-        //new code
         if (newVo != crntVo){
         	def lB = crntVo - 5
             def uB = crntVo + 5
@@ -693,10 +672,8 @@ def setVents(newVo){
         	changeRequired = true
         	vent.setLevel(newVo)
         }
-        //logger(10,"info","[${vent.displayName}], new vo: ${newVo}, current vo: ${crntVo}, changeRequired: ${changeMe}")
         logger(30,"info","setVents- [${vent.displayName}], changeRequired: ${changeMe}, new vo: ${newVo}, current vo: ${crntVo}")
     }
-    //state.voRequest = newVo
     def mqText = ""
     if (state.mainQuick && settings.quickRecovery && newVo == 100){
     	mqText = ", quick recovery active"
@@ -753,7 +730,6 @@ def zoneFixedOptions(){
     def start
     if (!state.tempScale) state.tempScale = location.temperatureScale
 	if (state.tempScale == "F"){
-    	//zo = [["60":"5°F"],["4":"4°F"],["3":"3°F"],["2":"2°F"],["1":"1°F"],["0":"0°F"],["-1":"-1°F"],["-2":"-2°F"],["-3":"-3°F"],["-4":"-4°F"],["-5":"-5°F"]]
     	start = 60
         start.step 81, 1, {
    			opts.push(["${it}":"${it}°F"])
@@ -763,7 +739,6 @@ def zoneFixedOptions(){
         start.step 27, 1, {
    			opts.push(["${it}":"${it}°C"])
 		}
-    	//zo = [["5":"5°C"],["4":"4°C"],["3":"3°C"],["2":"2°C"],["1":"1°C"],["0":"0°C"],["-1":"-1°C"],["-2":"-2°C"],["-3":"-3°C"],["-4":"-4°C"],["-5":"-5°C"]]
     }
 	return opts
 }
@@ -786,11 +761,19 @@ def getEndReport(){
 
 def getZoneConfig(){
 	//zoneControlSwitch
-    def zc = "Not Activated" 
-    def zt = "heating offset: ${tempStr(heatOffset)}\n\tcooling offset: ${tempStr(coolOffset)}"
+    def zc = "Not Activated"
+    def cspStr = ""
+    if (parent.isAC()){
+        if (zoneControlType == "fixed") cspStr = "\n\tcooling set point: ${tempStr(settings.staticCSP)}"
+        else cspStr = "\n\tcooling offset: ${tempStr(state.mainCSP)}"
+    }
+    def hspStr = ""
+    if (zoneControlType == "fixed") hspStr = "heating set point: ${tempStr(staticHSP)}"
+    else hspStr = "heating offset: ${tempStr(heatOffset)}"
+    
+    def zt = hspStr + cspStr
     if (zoneControlSwitch) zc = "is ${zoneControlSwitch.currentValue("switch")} via [${zoneControlSwitch.displayName}]"
-    if (zoneControlType == "fixed") zt = "heating set point: ${tempStr(staticHSP)}\n\tcooling setpoint: ${tempStr(staticCSP)}"
-	return "\n\tVents: ${vents}\n\ttemp sensors: [${tempSensors}]\n\tminimum vent opening: ${minVo}%\n\tmaximum vent opening: ${maxVo}%\n\t${zt}\n\tzone control: ${zc}\n\tversion: ${state.vChild ?: "No data available yet."}"
+	return "\n\tVents: ${vents}\n\ttemp sensor: [${tempSensors}]\n\tminimum vent opening: ${minVo}%\n\tmaximum vent opening: ${maxVo}%\n\t${zt}\n\tzone control: ${zc}\n\tversion: ${state.vChild ?: "No data available yet."}"
 }
 
 def getZoneState(){
@@ -801,7 +784,7 @@ def getZoneState(){
     if (settings.quickRecovery && state.quickRecoveryActive && s) qr = true
     def report =  "\n\trunning: ${s}\n\tqr active: ${qr}\n\tcurrent temp: ${tempStr(state.zoneTemp)}\n\tset point: ${tempStr(state.activeSetPoint)}"
     vents.each{ vent ->
- 		def b = vent.currentValue("battery")
+ 		def b = vent.currentValue("battery") ? vent.currentValue("battery") + "%" : "No data yet"
         def l = vent.currentValue("level").toInteger()
         
         def d = state."${vent.id}"
@@ -813,8 +796,7 @@ def getZoneState(){
             if (t) lrd = (new Date(d.voResponseTS + location.timeZone.rawOffset ).format("yyyy-MM-dd HH:mm")).toString()
             if (r) rtt = "response time: ${r}s"
         }
-		
-		report = report + "\n\tVent: ${vent.displayName}\n\t\tlevel: ${l}%\n\t\tbattery: ${b}%\n\t\t${rtt}\n\t\tlast response: ${lrd}"
+		report = report + "\n\tVent: ${vent.displayName}\n\t\tlevel: ${l}%\n\t\tbattery: ${b}\n\t\t${rtt}\n\t\tlast response: ${lrd}"
     }
     return report
 }

@@ -1,6 +1,9 @@
 /**
- *  Keenect 0.1.7
+ *  Keenect 0.1.8
  	
+    0.1.8	trapped no zone temp being returned in report
+    		added HVAC type select, heat only, AC
+            moved delay options to the advanced page
     0.1.7 	removed vo reporting
     		re-wrote switch handler
             removed close vent option
@@ -50,7 +53,6 @@ preferences {
 
 def installed() {
 	log.debug "Installed with settings: ${settings}"
-	//initialize()
 }
 
 def updated() {
@@ -60,7 +62,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.7"
+	state.vParent = "0.1.8"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -76,7 +78,6 @@ def initialize() {
     state.mainCSP = state.mainCSP ?: tStat.currentValue("coolingSetpoint").toFloat()
     state.mainHSP = state.mainHSP ?: tStat.currentValue("heatingSetpoint").toFloat()
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
-    //state.mainQuick	 = state.mainQuick ?: false
     checkNotify(null)
     //log.debug "app.id:${app.id}" app.id:2442be54-1cbc-4fe8-a378-baaffdf06591
   	state.etf = app.id == '2442be54-1cbc-4fe8-a378-baaffdf06591'
@@ -103,10 +104,15 @@ def main(){
 					)                
                 }
                 section("Advanced"){
-                	def afTitle = "Advanced features:"
-                	def afDesc = '\n\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]")
+                	//def afTitle = "Advanced features:"
+                	def afDesc = '\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]") 
+                    if (!settings.fanRunOn || settings.fanRunOn == "0"){
+               			afDesc = afDesc + "\n\tDelay notification is " + "[off]"
+            		} else {
+               			afDesc = afDesc + "\n\tDelay notification is " + "[on]"
+            		}
 					href( "advanced"
-						,title			: afTitle
+						,title			: "" //afTitle
 						,description	: afDesc
 						,state			: null
 					)
@@ -129,12 +135,26 @@ def main(){
                 		,type			: "capability.temperatureMeasurement"
                         ,submitOnChange	: false
             		) 
+		    		def iacTitle = ""
+                    if (isAC()) iacTitle = "System is AC capable"
+                    else iacTitle = "System is heat only"
+          			input(
+            			name			: "isACcapable"
+               			,title			: iacTitle 
+               			,multiple		: false
+               			,required		: true
+               			,type			: "bool"
+                		,submitOnChange	: true
+                		,defaultValue	: true
+            		)            
+                    /*
                     def froTitle = 'Delay zone cycle end notification is '
                     if (!fanRunOn || fanRunOn == "0"){
                     	froTitle = froTitle + "[off]"
                     } else {
                     	froTitle = froTitle + "[on]"
                     }
+                    
                     input(
             			name			: "fanRunOn"
                         ,title			: froTitle
@@ -144,7 +164,8 @@ def main(){
                 		,options		: [["0":"Off"],["60":"1 Minute"],["120":"2 Minutes"],["180":"3 Minutes"],["240":"4 Minutes"],["300":"5 Minutes"]]
                         ,submitOnChange	: true
                    		,defaultValue	: "0"
-            		)             
+            		) 
+                    */
             }
             if (installed){
                 section (getVersionInfo()) { }
@@ -171,8 +192,8 @@ def advanced(){
                 ,submitOnChange	: true
             )     
             def vo = -1
-            if (setVo){
-            	vo = setVo.toInteger()
+            if (settings.setVo){
+            	vo = settings.setVo.toInteger()
                 if (vo > -1) paragraph (setChildVents(vo))
             }
          	input(
@@ -185,7 +206,7 @@ def advanced(){
                 ,submitOnChange	: false
                 ,defaultValue	: "10"
             )  
-		    def etnTitle = sendEventsToNotifications ?  "Send lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
+		    def etnTitle = settings.sendEventsToNotifications ?  "Send lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
           	input(
             	name			: "sendEventsToNotifications"
                	,title			: etnTitle 
@@ -194,6 +215,22 @@ def advanced(){
                	,type			: "bool"
                 ,submitOnChange	: true
                 ,defaultValue	: false
+            ) 
+            def froTitle = 'Delay zone cycle end notification is '
+            if (!settings.fanRunOn || settings.fanRunOn == "0"){
+               	froTitle = froTitle + "[off]"
+            } else {
+               	froTitle = froTitle + "[on]"
+            }
+            input(
+            	name			: "fanRunOn"
+                ,title			: froTitle
+            	,multiple		: false
+                ,required		: true
+                ,type			: "enum"
+                ,options		: [["0":"Off"],["60":"1 Minute"],["120":"2 Minutes"],["180":"3 Minutes"],["240":"4 Minutes"],["300":"5 Minutes"]]
+                ,submitOnChange	: true
+                ,defaultValue	: "0"
             ) 
         }
     }
@@ -255,25 +292,27 @@ def report(params){
 def getReport(rptName){
 	def cMethod
     def standardReport = false
-    //[stat:[mainState:heat|cool|auto,mainMode:heat|cool|idle,mainCSP:,mainHSP:,mainOn:true|false]]
     def t = tempSensors.currentValue("temperature")
     def reports = ""
+    def cspStr = ""
+    if (isAC()) cspStr = "\n\tcooling set point: ${tempStr(state.mainCSP)}"
 	if (rptName == "Current state"){
     	standardReport = true
     	cMethod = "getZoneState"
         //get whole house average temp
         def averageTemp = 0
         childApps.each{ child ->
-        	averageTemp = averageTemp + child.getZoneTemp()
+        	def zt = child.getZoneTemp()
+        	if (zt) averageTemp = averageTemp + zt
         }
         averageTemp = (averageTemp / childApps.size()).toDouble().round(1)
-        reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}\n\tcooling set point: ${tempStr(state.mainCSP)}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
+        reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}${cspStr}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
         reports = reports + "Average zone temp: ${tempStr(averageTemp)}\n\n"
     } 
     if (rptName == "Configuration"){
     	standardReport = true
     	cMethod = "getZoneConfig"
-        reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}\n\tcooling set point: ${tempStr(state.mainCSP)}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
+        reports = "Main system:\n\tstate: ${state.mainState}\n\tmode: ${state.mainMode}\n\tcurrent temp: ${tempStr(t)}${cspStr}\n\theating set point: ${tempStr(state.mainHSP)}\n\n"
     }  
     if (rptName == "Last results"){
     	standardReport = true
@@ -307,23 +346,16 @@ def getReport(rptName){
     return reports
 }
 
+// main methods
 def checkNotify(evt){
-
-	//logger(10|20|30|40,"error"|"warn"|"info"|"debug"|"trace",text)
     logger(40,"debug","checkNotify:enter- ")
-	
-	//log.debug "thermostat event- name: ${evt.name} value: ${evt.value} , description: ${evt.descriptionText}"
-    //[stat:[mainMode:heat|cool|auto,mainState:heat|cool|idle,mainCSP:,mainHSP:,mainOn:true|false]]
-	
-    //[msg:"zone", data:[name:app.label,event:"installed"]]
-    //def msg = params.msg
-    //def initRequest = evt == "zoneRequest"
-    //logger(30,"warn","checkNotify zoneRequest- from a new Zone")
 	def tempStr = ''
     def tempFloat = 0.0
     def tempBool = false
     def isSetback = false
-    def delay = settings.fanRunOn.toInteger()
+    def delay = 0
+    if (settings.fanRunOn) settings.fanRunOn.toInteger()
+    def mainTemp = tempSensors.currentValue("temperature").toFloat()
 	
     //thermostat state
 	tempStr = getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
@@ -340,13 +372,17 @@ def checkNotify(evt){
     logger(40,"info","checkNotify- mainMode: ${mainMode}, mainModeChange: ${mainModeChange}")
 
 	//cooling set point
-	tempFloat = tStat.currentValue("coolingSetpoint").toFloat()
-    def mainCSP = state.mainCSP
-    def mainCSPChange = mainCSP != tempFloat
-    //is setback? new csp > old csp
-    isSetback = tempFloat > mainCSP
-    mainCSP = tempFloat
-    logger(40,"info","checkNotify- mainCSP: ${mainCSP}, mainCSPChange: ${mainCSPChange}")
+    def mainCSPChange = false
+    def mainCSP
+    if (isAC()){
+		tempFloat = tStat.currentValue("coolingSetpoint").toFloat()
+    	mainCSP = state.mainCSP
+    	mainCSPChange = mainCSP != tempFloat
+    	//is setback? new csp > old csp
+    	isSetback = tempFloat > mainCSP
+    	mainCSP = tempFloat
+    	logger(40,"info","checkNotify- mainCSP: ${mainCSP}, mainCSPChange: ${mainCSPChange}")
+    }
 
 	//heating set point
 	tempFloat = tStat.currentValue("heatingSetpoint").toFloat()
@@ -359,31 +395,11 @@ def checkNotify(evt){
     
     def mainOn = mainState != "idle"
     
-    /*
-    //quick recovery
-    def mainTemp = tempSensors.currentValue("temperature").toFloat()
-    def mainQuick = state.mainQuick
-    def mainQuickChange = false
-    logger(30,"debug","checkNotify- quick recovery mainOn: ${mainOn}, isSetback: ${isSetback}")
-    if (mainOn && !isSetback){
-      	//mainTemp = tempFloat
-        if (mainState == "heat"){
-    		tempBool =  (mainTemp + 2) <= mainHSP
-    	} else if (mainState == "cool") {
-    		tempBool =  (mainTemp - 2) >= mainCSP
-    	}
-        mainQuickChange = tempBool != mainQuick
-        mainQuick = tempBool
-        logger(30,"debug","checkNotify- quick recovery active: ${mainQuick}, changed: ${mainQuickChange}")
-    }
-  	*/
-    
     //always update state vars
     state.mainState = mainState
     state.mainMode = mainMode
-    state.mainCSP = mainCSP
+    if (isAC()) state.mainCSP = mainCSP
     state.mainHSP = mainHSP
-    //state.mainQuick = mainQuick
     state.mainTemp = mainTemp
     
     //update cycle start data
@@ -405,8 +421,8 @@ def checkNotify(evt){
         	logger(30,"debug","dataSet: ${dataSet}")
             if (mainStateChange) logger(10,"info","Main HVAC state changed to: ${mainState}")
         	if (mainModeChange) logger(10,"info","Main HVAC mode changed to: ${mainMode}")
-        	if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${mainCSP}")
-        	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${mainHSP}")
+        	if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${tempStr(mainCSP)}")
+        	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${tempStr(mainHSP)}")
             state.dataSet = dataSet
             if (delay > 0){
 				logger(10,"info", "Zone notification is scheduled in ${delaySeconds} delay")
@@ -415,8 +431,6 @@ def checkNotify(evt){
         		notifyZones()
         	}
         }
-        //state.dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn]]
-    	//def dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn,delay:delay,mainQuick:mainQuick,mainQuickChange:mainQuickChange]]
     }
     logger(40,"debug","checkNotify:exit- ")
 }
@@ -466,12 +480,11 @@ def getNormalizedOS(os){
     } else {
     	normOS = "idle"
     }
-    //log.debug "normOS- in:${os}, out:${normOS}"
     return normOS
 }
 
 def getVersionInfo(){
-	return "Versions:\n\tKeenect: ${state.vParent}\n\tkeenectZone: ${state.vChild ?: "No data available yet."}"
+	return "Versions:\n\tKeenect: ${state.vParent ?: "No data available yet."}\n\tkeenectZone: ${state.vChild ?: "No data available yet."}"
 }
 
 def updateVer(vChild){
@@ -480,7 +493,7 @@ def updateVer(vChild){
 
 def tempStr(temp){
     def tc = state.tempScale ?: location.temperatureScale
-    if (temp) return "${temp.toString()}°${tc}"
+    if (temp != 0 && temp != null) return "${temp.toString()}°${tc}"
     else return "No data available yet."
 }
 
@@ -527,6 +540,11 @@ def getLogLevels(){
 
 def getID(){
 	return state.etf
+}
+
+def isAC(){
+	//if isACcapable == null, or == true
+	return (isACcapable == null || isACcapable)
 }
 
 /*
