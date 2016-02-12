@@ -1,6 +1,7 @@
 /**
- *  Keenect 0.1.8
+ *  Keenect 0.1.8a
  	
+    0.1.8a	remobed bad tempertature formating
     0.1.8	trapped no zone temp being returned in report
     		added HVAC type select, heat only, AC
             moved delay options to the advanced page
@@ -62,7 +63,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.8"
+	state.vParent = "0.1.8a"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -421,8 +422,8 @@ def checkNotify(evt){
         	logger(30,"debug","dataSet: ${dataSet}")
             if (mainStateChange) logger(10,"info","Main HVAC state changed to: ${mainState}")
         	if (mainModeChange) logger(10,"info","Main HVAC mode changed to: ${mainMode}")
-        	if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${tempStr(mainCSP)}")
-        	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${tempStr(mainHSP)}")
+        	if (mainCSPChange) logger(10,"info","Main HVAC cooling setpoint changed to: ${mainCSP}")
+        	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${mainHSP}")
             state.dataSet = dataSet
             if (delay > 0){
 				logger(10,"info", "Zone notification is scheduled in ${delaySeconds} delay")
