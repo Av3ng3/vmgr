@@ -1,27 +1,7 @@
 /**
- *  Keenect 0.1.8b
+ *  Keenect 1.0.0
  	
-    0.1.8b	fixed NPE error in heating only setting
-    0.1.8a	removed bad tempertature formating
-    0.1.8	trapped no zone temp being returned in report
-    		added HVAC type select, heat only, AC
-            moved delay options to the advanced page
-    0.1.7 	removed vo reporting
-    		re-wrote switch handler
-            removed close vent option
-    0.1.6	released vo reporting
- 	0.1.5a	fixed quick recovery causing zone to bypass setback detection
-    0.1.5	added quick recovery support
- 	0.1.3	vent close global options changed
-    0.1.2a	update for todays change in todays map input change
-    0.1.2	0.1.1 was a cruel and mean thing...
-    0.1.1	fixed delay notification and null init issues
-    0.1.0	detected setback 
-    		force vent vo option, one time on page change, sets all zone vents to the selected option
-    0.0.8a	fixed initial notify delay bug
-    		moved vent polling to child
-    0.0.8	other stuff to support the needs of the children
- 	0.0.7	added fan run on delay
+  
  *
  *  Copyright 2015 Mike Maxwell
  *
@@ -64,7 +44,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "0.1.8b"
+	state.vParent = "1.0.0"
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -73,6 +53,8 @@ def initialize() {
     subscribe(tStat, "coolingSetpoint", checkNotify)
     //tempSensors
     subscribe(tempSensors, "temperature", checkNotify)
+    //pressure switch
+    subscribe(pressureSwitch, "contact", managePressure)
 
 	//init state vars
 	state.mainState = state.mainState ?: getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
@@ -80,6 +62,7 @@ def initialize() {
     state.mainCSP = state.mainCSP ?: tStat.currentValue("coolingSetpoint").toFloat()
     state.mainHSP = state.mainHSP ?: tStat.currentValue("heatingSetpoint").toFloat()
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
+    state.voBackoff = state.voBackoff ?: 0
     checkNotify(null)
     //log.debug "app.id:${app.id}" app.id:2442be54-1cbc-4fe8-a378-baaffdf06591
   	state.etf = app.id == '2442be54-1cbc-4fe8-a378-baaffdf06591'
@@ -94,31 +77,11 @@ def main(){
         ,title		: "Zones"
         ,install	: true
         ,uninstall	: installed
-        ){	if (installed){
+        ){	
+             if (installed){
         		section(){
         			app(name: "childZones", appName: "keenectZone", namespace: "MikeMaxwell", description: "Create New Vent Zone...", multiple: true)	
                 }
-           		section("Reporting"){
-         			href( "reporting"
-						,title		: "Available reports..."
-						,description: ""
-						,state		: null
-					)                
-                }
-                section("Advanced"){
-                	//def afTitle = "Advanced features:"
-                	def afDesc = '\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]") 
-                    if (!settings.fanRunOn || settings.fanRunOn == "0"){
-               			afDesc = afDesc + "\n\tDelay notification is " + "[off]"
-            		} else {
-               			afDesc = afDesc + "\n\tDelay notification is " + "[on]"
-            		}
-					href( "advanced"
-						,title			: "" //afTitle
-						,description	: afDesc
-						,state			: null
-					)
-                }                
              }
 		     section("Configuration"){
                    	input(
@@ -149,28 +112,29 @@ def main(){
                 		,submitOnChange	: true
                 		,defaultValue	: true
             		)            
-                    /*
-                    def froTitle = 'Delay zone cycle end notification is '
-                    if (!fanRunOn || fanRunOn == "0"){
-                    	froTitle = froTitle + "[off]"
-                    } else {
-                    	froTitle = froTitle + "[on]"
-                    }
-                    
-                    input(
-            			name			: "fanRunOn"
-                        ,title			: froTitle
-                		,multiple		: false
-                		,required		: true
-                		,type			: "enum"
-                		,options		: [["0":"Off"],["60":"1 Minute"],["120":"2 Minutes"],["180":"3 Minutes"],["240":"4 Minutes"],["300":"5 Minutes"]]
-                        ,submitOnChange	: true
-                   		,defaultValue	: "0"
-            		) 
-                    */
-            }
+            }        	
             if (installed){
-                section (getVersionInfo()) { }
+                section("Advanced"){
+                	def afDesc = '\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]") 
+                    if (!settings.fanRunOn || settings.fanRunOn == "0"){
+               			afDesc = afDesc + "\n\tDelay notification is " + "[off]"
+            		} else {
+               			afDesc = afDesc + "\n\tDelay notification is " + "[on]"
+            		}
+					href( "advanced"
+						,title			: "" 
+						,description	: afDesc
+						,state			: null
+					)
+                }   
+          		section("Reporting"){
+         			href( "reporting"
+						,title		: "Available reports..."
+						,description: ""
+						,state		: null
+					)                
+                }          
+            	section (getVersionInfo()) { }    
             }
 	}
 }
@@ -234,6 +198,16 @@ def advanced(){
                 ,submitOnChange	: true
                 ,defaultValue	: "0"
             ) 
+            if (state.etf){
+                input(
+                    name			: "pressureSwitch"
+                    ,title			: "Over pressure switch"
+                    ,multiple		: false
+                    ,required		: false
+                    ,type			: "capability.contactSensor"
+                    ,submitOnChange	: false
+                )				 
+            }
         }
     }
 }
@@ -469,6 +443,26 @@ def setChildVents(vo){
     return result
 }
 
+def managePressure(evt){
+	//"open" = OK/clear "closed" = no good baby...
+    
+    //check running state here
+    
+    if (evt.value == "closed"){
+    	//track time?
+    	//set back off counter, at system start up
+		//open vents full boat...
+        //increment back off counter
+    } else {
+    	//back of vents counter * 5%
+        //need local back off variable in each zone
+    }
+}
+
+def getBackoff(){
+	return state.voBackoff
+}
+
 def getNormalizedOS(os){
 	def normOS = ""
     if (os == "heating" || os == "pending heat" || os == "heat" || os == "emergency heat"){
@@ -546,7 +540,7 @@ def getID(){
 
 def isAC(){
 	//if isACcapable == null, or == true
-	return (isACcapable == null || isACcapable)
+	return (settings.isACcapable == null || settings.isACcapable)
 }
 
 /*

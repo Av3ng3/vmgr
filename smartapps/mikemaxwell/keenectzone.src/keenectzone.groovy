@@ -1,54 +1,7 @@
 /**
- *  keenectZone 0.1.8a
+ *  keenectZone 1.0.0
  	
-    0.1.8a	fixed issue with vent close running twice (once at main idle, and again via the zone disable and when idle)
-	0.1.8	hooks to support keenect hvac type selections
-    		moved delay and disable switch options to the advanced page    		
-    0.1.7e	fixed zone set point getting by zone disable...
-    0.1.7d	added vent close on disable only option
-  	0.1.7c	updated config report for fixed temp option
-  	0.1.7b	corrected QR notification backwordness
-    		added fixed temp control option
-  	0.1.7a 	minor notification changes
-    		fixed vo latency reporting
-    0.1.7 	removed vo reporting
-    		re-wrote switch handler
-            re-wrote a bunch of stuff
-    0.1.6	released vo reporting
-    		added in off check in set level since the vents seem to report funny
- 	0.1.5u	fix disable switch fireing up zone when app update fires
-    		added vent opening reporting hooks
-    0.1.5f	arggg....
- 	0.1.5e	added in missing local close options for zone disable mid cycle...
- 	0.1.5d	changed error log in eval to info and "nothing to do...", since it's not really an error
-    		fixed zone remaining disabled when zone switch is removed as a configuration option
-            fixed zone disable in general
-    0.1.5c	fixed end report not generating correctly
-    0.1.5b	changed disable function to immediate when zone is running
- 	0.1.5a	patch null error on end report creation, before there is an end report...	
- 	0.1.5	pulled pressure polling, as it has proven worthless
-    		added quick recovery
-    0.1.4	fixed null race condition when adding new zone.        
- 	0.1.3	fixed bug where zoneSetpoint wouldn't stick when applied while the zone was running
-    		reversed order of zone temp setbacks
-            updated zone vent close options functionality
-    0.1.2a	update for ST's change of default map value handling
-    0.1.2	fixed init on settings changes
-    0.1.1	fixed bug in zone temp
-    0.1.0	added adjustable logging
-    		added pressure polling switch option
-    0.0.8a	bug fixes, poller and notify
- 	0.0.8	actually got zone update support working
- 			fixed bug, zone not restarting
-    		added app version info on the bottom of the parent page
-            added dynamic max opening selection
-    0.0.6a	added interim debugging
-    0.0.6	added options on what to do when the zone is disabled...
-    0.0.5	added disable switch option
-    0.0.4	basic reporting
-    0.0.3 	added dynamic zone change support while system is running
-    		added support for main set point updates while system is running
-    0.0.2	added F/C unit detection and display
+
     
  *  Copyright 2015 Mike Maxwell
  *
@@ -91,7 +44,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "0.1.8a"
+	state.vChild = "1.0.0"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -110,12 +63,13 @@ def main(){
         ,title		: "Zone Configuration"
         ,install	: true
         ,uninstall	: installed
-        ){
-		     section("Devices"){
-             	label(
+        ){	section(){
+          		label(
                    	title		: "Name the zone"
                     ,required	: true
-                )
+                )      
+        	}
+		    section("Devices"){
                 /*
 				only stock device types work in the list below???
                 ticket submitted, as this should work, and seems to work for everyone except me...
@@ -326,10 +280,8 @@ def zoneEvaluate(params){
 	def mainHSPLocal = state.mainHSP  ?: 0
 	def mainCSPLocal = state.mainCSP  ?: null
 	def mainOnLocal = state.mainOn  ?: ""
-    //if (mainStateLocal == null || mainModeLocal == null || mainHSPLocal == null || mainCSPLocal == null || mainOnLocal == null ){
-    //	log.warn "one or more main state variables are null, mainState:${mainStateLocal} mainMode:${mainModeLocal} mainHSP:${mainHSPLocal} mainCSP:${mainCSPLocal} mainOn:${mainOnLocal}"
-    //}
- 	//zone states    
+
+	//zone states    
 	def zoneDisabledLocal = fetchZoneControlState()
     def runningLocal
     
@@ -338,18 +290,21 @@ def zoneEvaluate(params){
     def coolOffsetLocal 
     if (settings.coolOffset) settings.coolOffset = settings.coolOffset.toInteger()
     def heatOffsetLocal = settings.heatOffset.toInteger()
-    def maxVoLocal = settings.maxVo.toInteger()
+    
     def minVoLocal = settings.minVo.toInteger() 
-
-   //	if (coolOffsetLocal == null || heatOffsetLocal == null ){ //|| maxVoLocal == null || minVoLocal == null){
-    //	log.warn "one or more local inputs are null, coolOffset:${coolOffsetLocal} heatOffset:${heatOffsetLocal} " //maxVo:${maxVoLocal} minVo:${minVoLocal}"
-    //}
+    def maxVoLocal = settings.maxVo.toInteger()
+    
+    
+	if (state.etf){
+    	//back off back adjustment here
+		log.warn "parent backoff: ${parent.getBackoff()}"		
+	}
     
     //set it here depending on zoneControlType
     def zoneCSPLocal 
     if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal = (mainCSPLocal + coolOffsetLocal)
     def zoneHSPLocal = mainHSPLocal + heatOffsetLocal
-    if (zoneControlType == "fixed"){
+    if (settings.zoneControlType == "fixed"){
     	if (mainCSPLocal && settings.staticCSP)	zoneCSPLocal = settings.staticCSP.toInteger()
         zoneHSPLocal = settings.staticHSP.toInteger()
     }
@@ -375,7 +330,7 @@ def zoneEvaluate(params){
                     	runningLocal = false
                         def asp = state.activeSetPoint
                         def d
-                        if (zoneTempLocal && asp){
+                        if (zoneTempLocal != null && asp != null){
                             d = (zoneTempLocal - asp).toFloat()
                             d = d.round(1)
                         }
@@ -430,7 +385,7 @@ def zoneEvaluate(params){
                 	if (mainOnLocal){
                   		def asp = state.activeSetPoint
                         def d
-                        if (zoneTempLocal && asp){
+                        if (zoneTempLocal != null && asp != null){
                             d = (zoneTempLocal - asp).toFloat()
                             d = d.round(1)
                         }
@@ -556,11 +511,11 @@ def levelHandler(evt){
     } else {
     	//request
     	if (evt.description == ""){
-    		ventData =  [voRequest:v,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
+    		state."${evt.deviceId}" =  [voRequest:v,voRequestTS:t,voResponse:null,voResponseTS:null,voTTC:null] 
             logger(30,"debug","levelHandler-init request vo: ${v} t: ${t}")
         //response
         } else {
-        	ventData =  [voRequest:null,voRequestTS:null,voResponse:t,voResponseTS:v,voTTC:null] 
+        	state."${evt.deviceId}" =  [voRequest:null,voRequestTS:null,voResponse:t,voResponseTS:v,voTTC:null] 
             logger(30,"debug","levelHandler-init response vo: ${v} t: ${t}")
         }
     }
