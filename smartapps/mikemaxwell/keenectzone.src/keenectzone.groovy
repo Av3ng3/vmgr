@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.0.1
+ *  keenectZone 1.0.1a
  	
+    2016-02-04 fixed NPE error on line 293
     2016-02-13 re worked zone disable logic
 
  *  Copyright 2015 Mike Maxwell
@@ -44,7 +45,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.0.1"
+	state.vChild = "1.0.1a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -290,15 +291,29 @@ def zoneEvaluate(params){
     def coolOffsetLocal 
     if (settings.coolOffset) settings.coolOffset = settings.coolOffset.toInteger()
     def heatOffsetLocal = settings.heatOffset.toInteger()
-    def zoneCloseOption = settings.ventCloseWait.toInteger()
+    def zoneCloseOption = -1
+    if (settings.ventCloseWait) zoneCloseOption = settings.ventCloseWait.toInteger()
     
     def minVoLocal = settings.minVo.toInteger() 
     def maxVoLocal = settings.maxVo.toInteger()
     
     
 	if (state.etf){
-    	//back off back adjustment here
-		log.warn "parent backoff: ${parent.getBackoff()}"		
+    	//back off adjustment here
+        def backOff = parent.getBackoff()
+		log.warn "parent backoff: ${backOff}"	
+        if (minVoLocal != 100 && (minVoLocal + backOff) < 100){
+        	minVoLocal = minVoLocal + backOff
+            log.warn "minVoLocal changed to: ${minVoLocal}"
+        } else {
+        	//log.warn "maxVoLocal changed to: ${minVoLocal}"
+        }
+        if (maxVoLocal != 100 && (maxVoLocal + backOff) < 100){
+        	maxVoLocal = maxVoLocal + backOff
+            log.warn "maxVoLocal changed to: ${maxVoLocal}"
+        } else {
+        	//log.warn "maxVoLocal changed to: ${minVoLocal}"
+        }
 	}
     
     //set it here depending on zoneControlType
@@ -396,12 +411,9 @@ def zoneEvaluate(params){
         case "pressure" :
         		logger(30,"debug","zoneEvaluate- msg: ${msg}, data: ${data}")
         	break
-        //no longer used???...
-        case "self" :
-                if (data.settingsChanged){
-                	logger(30,"debug","zoneEvaluate- zone settingsChanged, data: ${data}")
-                	evaluateVents = true
-                }
+        case "pressureAlert" :
+               	logger(30,"debug","zoneEvaluate- pressureAlert, data: ${data}")
+               	evaluateVents = true
         	break
     }    
     
