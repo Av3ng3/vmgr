@@ -1,6 +1,7 @@
 /**
- *  Keenect 1.0.0
- 	
+ *  Keenect 1.0.0a
+ 
+ 	2015-02-14 Fix zone init NPE error on heat only
   
  *
  *  Copyright 2015 Mike Maxwell
@@ -44,7 +45,9 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "1.0.0"
+	state.vParent = "1.0.0a"
+	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e4' //5
+	
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
     subscribe(tStat, "thermostatFanMode", checkNotify)
@@ -54,7 +57,7 @@ def initialize() {
     //tempSensors
     subscribe(tempSensors, "temperature", checkNotify)
     //pressure switch
-    subscribe(pressureSwitch, "contact", managePressure)
+    if (getID()) subscribe(pressureSwitch, "contact", managePressure)
 
 	//init state vars
 	state.mainState = state.mainState ?: getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
@@ -64,9 +67,6 @@ def initialize() {
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
     state.voBackoff = state.voBackoff ?: 0
     checkNotify(null)
-    //log.debug "app.id:${app.id}" app.id:2442be54-1cbc-4fe8-a378-baaffdf06591
-  	state.etf = app.id == '2442be54-1cbc-4fe8-a378-baaffdf06591'
-    
 }
 
 /* page methods	* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -133,8 +133,10 @@ def main(){
 						,description: ""
 						,state		: null
 					)                
-                }          
-            	section (getVersionInfo()) { }    
+                }
+                def dev  = ""
+                 if (getID()) dev = "\n(development instance)"
+            	section (getVersionInfo() + dev) { }    
             }
 	}
 }
@@ -172,7 +174,7 @@ def advanced(){
                 ,submitOnChange	: false
                 ,defaultValue	: "10"
             )  
-		    def etnTitle = settings.sendEventsToNotifications ?  "Send lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
+		    def etnTitle = settings.sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
           	input(
             	name			: "sendEventsToNotifications"
                	,title			: etnTitle 
@@ -378,15 +380,18 @@ def checkNotify(evt){
     state.mainHSP = mainHSP
     state.mainTemp = mainTemp
     
-    //update cycle start data
+    //update cycle data
     if (mainStateChange && mainOn){
     	//main start
         state.startTime = now() + location.timeZone.rawOffset
         state.startTemp = mainTemp
+        state.voBackoff = 0
     } else if (mainStateChange && !mainOn){
     	//main end
         state.endTime = now() + location.timeZone.rawOffset
         state.endTemp = mainTemp
+        //maybe not set this here and use for reporting?, probably better to let the zones track it...
+        state.voBackoff = 0
     }
     if (mainStateChange || mainModeChange || mainCSPChange || mainHSPChange){
     	def dataSet = [msg:"stat",data:[initRequest:false,mainState:mainState,mainStateChange:mainStateChange,mainMode:mainMode,mainModeChange:mainModeChange,mainCSP:mainCSP,mainCSPChange:mainCSPChange,mainHSP:mainHSP,mainHSPChange:mainHSPChange,mainOn:mainOn]]
@@ -415,7 +420,8 @@ def notifyZone(){
 	//initial data request for new zone
     def mainState = getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
     def mainMode = getNormalizedOS(tStat.currentValue("thermostatMode"))
-    def mainCSP = tStat.currentValue("coolingSetpoint").toFloat()
+    def mainCSP 
+    if (isAC()) mainCSP = tStat.currentValue("coolingSetpoint").toFloat()
     def mainHSP = tStat.currentValue("heatingSetpoint").toFloat()
     def mainOn = mainState != "idle"
 	def dataSet = [msg:"stat",data:[initRequest:true,mainState:mainState,mainMode:mainMode,mainCSP:mainCSP,mainHSP:mainHSP,mainOn:mainOn]]
@@ -423,9 +429,11 @@ def notifyZone(){
     return dataSet
 }
 
-def notifyZones(){
+def notifyZones(altDS){
     logger(40,"debug","notifyZones:enter- ")
-    def dataSet = state.dataSet
+    def dataSet 
+    if (altDS) dataSet = altDS
+    else dataSet = state.dataSet
     childApps.each {child ->
     	child.zoneEvaluate(dataSet)
     }
@@ -447,15 +455,29 @@ def managePressure(evt){
 	//"open" = OK/clear "closed" = no good baby...
     
     //check running state here
-    
+    //def mainOn = state.mainState != "idle"
+
+	//pressure alert
     if (evt.value == "closed"){
-    	//track time?
-    	//set back off counter, at system start up
-		//open vents full boat...
-        //increment back off counter
+    	//first instance...
+ 		if (state.voBackoff == 0){
+            state.voBackoff = state.voBackoff + 5
+            log.warn "initial pressure alert!, opening vents to 100%, initial backOff set to ${state.voBackoff}%"
+        } else {
+			state.voBackoff = state.voBackoff + 5
+            log.warn "continued pressure alert!, opening vents to 100%, backOff set to ${state.voBackoff}%"
+        }
+        //setChildVents(100)
     } else {
-    	//back of vents counter * 5%
-        //need local back off variable in each zone
+         if (state.voBackoff == 0){
+         	log.info "initial alert cleared, trying with backOff set to ${state.voBackoff}%"
+         } else {
+         	log.info "alert cleared, trying again with backOff set to ${state.voBackoff}%"
+         }
+         //tell the zones to evaluate the new VO's
+         //pressureDataset = [msg:"pressureAlert",data:state.voBackoff]
+         //notifyZones([msg:"pressureAlert",data:state.voBackoff])
+         
     }
 }
 
