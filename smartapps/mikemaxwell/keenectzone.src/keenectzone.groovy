@@ -1,8 +1,8 @@
 /**
- *  keenectZone 1.0.0
+ *  keenectZone 1.0.1
  	
+    2016-02-13 re worked zone disable logic
 
-    
  *  Copyright 2015 Mike Maxwell
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
@@ -44,7 +44,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.0.0"
+	state.vChild = "1.0.1"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -290,6 +290,7 @@ def zoneEvaluate(params){
     def coolOffsetLocal 
     if (settings.coolOffset) settings.coolOffset = settings.coolOffset.toInteger()
     def heatOffsetLocal = settings.heatOffset.toInteger()
+    def zoneCloseOption = settings.ventCloseWait.toInteger()
     
     def minVoLocal = settings.minVo.toInteger() 
     def maxVoLocal = settings.maxVo.toInteger()
@@ -338,16 +339,9 @@ def zoneEvaluate(params){
                     	logger(10,"info","Main HVAC has shut down.")                        
                         
 						//check zone vent close options from zone
-                    	def zoneCloseOption = settings.ventCloseWait.toInteger()
-                    	if (zoneCloseOption != -1){
-       						if (zoneCloseOption == 0){
-                				logger(10,"warn", "Vents closed via close vents option")
-        						setVents(0)
-        					} else if (zoneCloseOption > 0){
-                				logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
-        						runIn(zoneCloseOption,delayClose)
-        					}                            
-                    	} 
+                    	if (zoneCloseOption >= 0){
+                        	 closeWithOptions(zoneCloseOption)
+                       	} 
      				}
                 } else {
                 	logger(30,"warn","zoneEvaluate- ${msg}, no matching events")
@@ -391,18 +385,11 @@ def zoneEvaluate(params){
                         }
                         state.endReport = "\n\tsetpoint: ${tempStr(asp)}\n\tend temp: ${tempStr(zoneTempLocal)}\n\tvariance: ${tempStr(d)}\n\tvent levels: ${vents.currentValue("level")}%"                    
 						runningLocal = false
-                        //check zone vent close options from zone
-                    	def zoneCloseOption = settings.ventCloseWait.toInteger()
-                    	if (zoneCloseOption != -1){
-       						if (zoneCloseOption == 0 || zoneCloseOption == -2){
-                				logger(10,"warn", "Vents closed via close vents option")
-        						setVents(0)
-        					} else if (zoneCloseOption > 0){
-                				logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
-        						runIn(zoneCloseOption,delayClose)
-        					} 
-                    	}
-					} 
+    				} 
+                    //check zone vent close options from zone
+                    if (zoneCloseOption == -2){
+                    	closeWithOptions(0)
+                    }
                     logger(10,"info", "Zone was disabled, we won't be doing anything alse until it's re-enabled")
                 }
         	break
@@ -526,12 +513,14 @@ def levelHandler(evt){
 def zoneDisableHandeler(evt){
     logger(40,"debug","zoneDisableHandeler- evt name: ${evt.name}, value: ${evt.value}")
     def zoneIsEnabled = evt.value == "on"
-    if (zoneIsEnabled){
-       	logger(10,"warn", "Zone was enabled via: [${zoneControlSwitch.displayName}]")
-    } else {
-       	logger(10,"warn", "Zone was disabled via: [${zoneControlSwitch.displayName}]")
+    if (zoneControlSwitch){
+    	if (zoneIsEnabled){
+       		logger(10,"warn", "Zone was enabled via: [${zoneControlSwitch.displayName}]")
+    	} else {
+       		logger(10,"warn", "Zone was disabled via: [${zoneControlSwitch.displayName}]")
+    	}
+    	zoneEvaluate([msg:"zoneSwitch"])
     }
-    zoneEvaluate([msg:"zoneSwitch"])
     logger(40,"debug","zoneDisableHandeler:exit- ")
 }
 
@@ -545,6 +534,16 @@ def tempHandler(evt){
 }
 
 //misc utility methods
+def closeWithOptions(zoneCloseOption){
+	if (zoneCloseOption == 0){
+		logger(10,"warn", "Vents closed via close vents option")
+		setVents(0)
+	} else if (zoneCloseOption > 0){
+		logger(10,"warn", "Vent closing is scheduled in ${zoneCloseOption} seconds")
+		runIn(zoneCloseOption,delayClose)
+	}          	
+}
+
 def fetchZoneControlState(){
 	logger(40,"debug","fetchZoneControlState:enter- ")
    if (zoneControlSwitch){
