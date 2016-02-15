@@ -1,8 +1,9 @@
 /**
- *  keenectZone 1.0.1a
+ *  keenectZone 1.0.2
  	
-    2016-02-04 fixed NPE error on line 293
-    2016-02-13 re worked zone disable logic
+    2016-02-15	developmental bits added for pressure control
+    2016-02-04 	fixed NPE error on line 293
+    2016-02-13 	re worked zone disable logic
 
  *  Copyright 2015 Mike Maxwell
  *
@@ -21,7 +22,7 @@ definition(
     name: "keenectZone",
     namespace: "MikeMaxwell",
     author: "Mike Maxwell",
-    description: "child application for 'Keenect', do not install directly.",
+    description: "zone application for 'Keenect', do not install directly.",
     category: "My Apps",
     parent: "MikeMaxwell:Keenect",
     iconUrl: "https://raw.githubusercontent.com/MikeMaxwell/smartthings/master/keen-app-icon.png",
@@ -45,12 +46,12 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.0.1a"
+	state.vChild = "1.0.2"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
-    state.isAC = parent.isAC()
+    state.isAC = parent.isAC() //AC enable bits
    	fetchZoneControlState()
     zoneEvaluate(parent.notifyZone())
 }
@@ -174,20 +175,9 @@ def main(){
                 }
             }
             section("Advanced"){
-                //advanced hrefs...
-                //def afTitle = "Advanced features:"
-				def afDesc = '\t' + (quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]") 
-                def froTitle = 'Close vent options are '
-                if (!ventCloseWait || ventCloseWait == "-1"){
-                	froTitle = froTitle + "[off]"
-                } else {
-                	froTitle = froTitle + "[on]"
-                }
-                afDesc = afDesc + "\n\t" + froTitle
-				def zcsTitle = zoneControlSwitch ? "Zone control switch: selected" : "Zone control switch: not selected"
-                afDesc = afDesc + "\n\t" + zcsTitle + "\n\tLog level is " + getLogLevel(settings.logLevel) + "\n\t" + (sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]")
+				def afDesc = "\t" + getTitle("quickRecovery") + "\n\t" + getTitle("ventCloseWait") + "\n\t" + getTitle("zoneControlSwitchSummary") + "\n\t" + getTitle("logLevelSummary") + "\n\t" + getTitle("sendEventsToNotificationsSummary") + "\n\t" + getTitle("pressureControl")
                 href( "advanced"
-                    ,title			: "" //afTitle
+                    ,title			: ""
 					,description	: afDesc
 					,state			: null
 				)
@@ -201,6 +191,9 @@ def main(){
 }
 
 def advanced(){
+    def pEnabled = false
+    try{ pEnabled = parent.hasPressure() }
+    catch(e){}
     return dynamicPage(
     	name		: "advanced"
         ,title		: "Advanced Options"
@@ -208,25 +201,18 @@ def advanced(){
         ,uninstall	: false
         ){
          section(){
-         		def qrTitle = quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]" 
           		input(
             		name			: "quickRecovery"
-                	,title			: qrTitle 
+                	,title			: getTitle("quickRecovery") 
                 	,multiple		: false
                 	,required		: false
                 	,type			: "bool"
                     ,submitOnChange	: true
                     ,defaultValue	: false
             	)          
-              	def froTitle = 'Close vent options are '
-                if (!ventCloseWait || ventCloseWait == "-1"){
-                	froTitle = froTitle + "[off]"
-                } else {
-                	froTitle = froTitle + "[on]"
-                }
             	input(
             		name			: "ventCloseWait"
-                    ,title			: froTitle
+                    ,title			: getTitle("ventCloseWait")
                 	,multiple		: false
                 	,required		: true
                 	,type			: "enum"
@@ -234,10 +220,9 @@ def advanced(){
                 	,submitOnChange	: true
                    	,defaultValue	: "-1"
             	)
-            	def zcsTitle = zoneControlSwitch ? "Optional zone control switch: when on, zone is enabled, when off, zone is disabled " : "Optional zone control switch"
                 input(
             		name			: "zoneControlSwitch"
-                	,title			: zcsTitle 
+                	,title			: getTitle("zoneControlSwitch") 
                 	,multiple		: false
                 	,required		: false
                 	,type			: "capability.switch"
@@ -253,16 +238,26 @@ def advanced(){
                 	,submitOnChange	: false
                    	,defaultValue	: "10"
             	)            
-         		def etnTitle = sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send Lite events to notification feed is [off]" 
           		input(
             		name			: "sendEventsToNotifications"
-                	,title			: etnTitle 
+                	,title			: getTitle("sendEventsToNotifications") 
                 	,multiple		: false
                 	,required		: false
                 	,type			: "bool"
                     ,submitOnChange	: true
                     ,defaultValue	: false
-            	)                 
+            	)      
+                if (pEnabled){
+          			input(
+            			name			: "pressureControl"
+                		,title			: getTitle("pressureControl") 
+                		,multiple		: false
+                		,required		: false
+                		,type			: "bool"
+                    	,submitOnChange	: true
+                    	,defaultValue	: true
+            		)                  
+				}              
         }
     }
 }
@@ -297,24 +292,30 @@ def zoneEvaluate(params){
     def minVoLocal = settings.minVo.toInteger() 
     def maxVoLocal = settings.maxVo.toInteger()
     
+    //def pEnabled = settings.pressureControl != false
     
-	if (state.etf){
+    def pEnabled = false
+    try{ pEnabled = parent.hasPressure() }
+    catch(e){} 
+    if (pEnabled && settings.pressureControl != false){
     	//back off adjustment here
         def backOff = parent.getBackoff()
-		log.warn "parent backoff: ${backOff}"	
-        if (minVoLocal != 100 && (minVoLocal + backOff) < 100){
-        	minVoLocal = minVoLocal + backOff
-            log.warn "minVoLocal changed to: ${minVoLocal}"
-        } else {
-        	//log.warn "maxVoLocal changed to: ${minVoLocal}"
+        if (backOff > 0){
+			log.warn "Keenect says backoff VO's by: ${backOff}%"	
+        	if (minVoLocal != 100 && (minVoLocal + backOff) < 100){
+            	log.info "backOff minVo- current settings: ${minVoLocal}, changed to: ${minVoLocal + backOff}"
+        		minVoLocal = minVoLocal + backOff
+        	} else {
+        		log.info "backOff could not change minVo (it's already at 100%) ${minVoLocal}"
+        	}
+        	if (maxVoLocal != 100 && (maxVoLocal + backOff) < 100){
+            	log.info "backOff maxVo- current settings: ${maxVoLocal}, changed to: ${maxVoLocal + backOff}"
+        		maxVoLocal = maxVoLocal + backOff
+        	} else {
+        		log.info "backOff could not change maxVo (it's already at 100%) ${maxVoLocal}"
+        	}
         }
-        if (maxVoLocal != 100 && (maxVoLocal + backOff) < 100){
-        	maxVoLocal = maxVoLocal + backOff
-            log.warn "maxVoLocal changed to: ${maxVoLocal}"
-        } else {
-        	//log.warn "maxVoLocal changed to: ${minVoLocal}"
-        }
-	}
+    }
     
     //set it here depending on zoneControlType
     def zoneCSPLocal 
@@ -413,6 +414,7 @@ def zoneEvaluate(params){
         	break
         case "pressureAlert" :
                	logger(30,"debug","zoneEvaluate- pressureAlert, data: ${data}")
+                log.warn "Pressure alert cleared, resetting zone VO's..."
                	evaluateVents = true
         	break
     }    
@@ -662,7 +664,51 @@ def tempStr(temp){
     else return "No data available yet."
 }
 
-//dynamic page input helpers
+//dynamic page helpers
+def getTitle(name){
+	def title = ""
+	switch(name){
+    	case "quickRecovery" :
+        	title = settings.quickRecovery ?  "Quick recovery is [on]" : "Quick recovery is [off]"
+        	break
+        case "ventCloseWait" :
+        	title = 'Close vent options are '
+            if (!settings.ventCloseWait || settings.ventCloseWait == "-1"){
+               	title = title + "[off]"
+            } else {
+             	title = title + "[on]"
+            }
+        	break
+        case "zoneControlSwitch" :
+        	title = settings.zoneControlSwitch ? "Optional zone control switch:\n\twhen on, zone is enabled\n\twhen off, zone is disabled " : "Optional zone control switch"
+        	break
+        case "zoneControlSwitchSummary" :
+        	title = settings.zoneControlSwitch ? "Zone control switch: selected" : "Zone control switch: not selected"
+        	break            
+        case "logLevelSummary" :
+        	title = "Log level is " + getLogLevel(settings.logLevel)
+        	break            
+        case "sendEventsToNotifications" :
+        	title = settings.sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send Lite events to notification feed is [off]" 
+        	break   
+        case "sendEventsToNotificationsSummary" :
+        	title = settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]" 
+        	break   
+		case "pressureControl" :
+        	def pEnabled = false
+            try{ pEnabled = parent.hasPressure() }
+    		catch(e){}
+        	if (pEnabled){
+            	if (settings.pressureControl == false){
+            		title = "Pressure management is [off]" 
+            	} else {
+            		title = "Pressure management is [on]"
+            	}
+            }
+        	break               
+	}
+    return title
+}
 
 def minVoptions(){
 	return [["0":"Fully closed"],["5":"5%"],["10":"10%"],["15":"15%"],["20":"20%"],["25":"25%"],["30":"30%"],["35":"35%"],["40":"40%"],["45":"45%"],["50":"50%"],["55":"55%"],["60":"60%"]]

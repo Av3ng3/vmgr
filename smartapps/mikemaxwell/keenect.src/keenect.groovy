@@ -1,7 +1,8 @@
 /**
- *  Keenect 1.0.0a
+ *  Keenect 1.0.2
  
- 	2015-02-14 Fix zone init NPE error on heat only
+ 	2015-02-15	Developmental bits added for pressure control
+ 	2015-02-14 	Fix zone init NPE error on heat only
   
  *
  *  Copyright 2015 Mike Maxwell
@@ -45,8 +46,8 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "1.0.0a"
-	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e4' //5
+	state.vParent = "1.0.2"
+	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e5' //5
 	
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
@@ -57,7 +58,8 @@ def initialize() {
     //tempSensors
     subscribe(tempSensors, "temperature", checkNotify)
     //pressure switch
-    if (getID()) subscribe(pressureSwitch, "contact", managePressure)
+    //if (state.etf) 
+    subscribe(pressureSwitch, "contact", managePressure)
 
 	//init state vars
 	state.mainState = state.mainState ?: getNormalizedOS(tStat.currentValue("thermostatOperatingState"))
@@ -65,7 +67,7 @@ def initialize() {
     state.mainCSP = state.mainCSP ?: tStat.currentValue("coolingSetpoint").toFloat()
     state.mainHSP = state.mainHSP ?: tStat.currentValue("heatingSetpoint").toFloat()
     state.mainTemp = state.mainTemp ?: tempSensors.currentValue("temperature").toFloat()
-    state.voBackoff = state.voBackoff ?: 0
+    state.voBackoff = 0
     checkNotify(null)
 }
 
@@ -115,12 +117,7 @@ def main(){
             }        	
             if (installed){
                 section("Advanced"){
-                	def afDesc = '\tLog level is ' + getLogLevel(settings.logLevel) + '\n\t' + (settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]") 
-                    if (!settings.fanRunOn || settings.fanRunOn == "0"){
-               			afDesc = afDesc + "\n\tDelay notification is " + "[off]"
-            		} else {
-               			afDesc = afDesc + "\n\tDelay notification is " + "[on]"
-            		}
+                	def afDesc = "\t" + getTitle("logLevelSummary") + "\n\t" + getTitle("sendEventsToNotificationsSummary") + "\n\t" + getTitle("pressureSwitchSummary")
 					href( "advanced"
 						,title			: "" 
 						,description	: afDesc
@@ -135,7 +132,7 @@ def main(){
 					)                
                 }
                 def dev  = ""
-                 if (getID()) dev = "\n(development instance)"
+                 if (state.etf) dev = "\n(development instance)"
             	section (getVersionInfo() + dev) { }    
             }
 	}
@@ -174,25 +171,18 @@ def advanced(){
                 ,submitOnChange	: false
                 ,defaultValue	: "10"
             )  
-		    def etnTitle = settings.sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send lite events to notification feed is [off]" 
           	input(
             	name			: "sendEventsToNotifications"
-               	,title			: etnTitle 
+               	,title			: getTitle("sendEventsToNotifications") 
                	,multiple		: false
                	,required		: false
                	,type			: "bool"
                 ,submitOnChange	: true
                 ,defaultValue	: false
             ) 
-            def froTitle = 'Delay zone cycle end notification is '
-            if (!settings.fanRunOn || settings.fanRunOn == "0"){
-               	froTitle = froTitle + "[off]"
-            } else {
-               	froTitle = froTitle + "[on]"
-            }
             input(
             	name			: "fanRunOn"
-                ,title			: froTitle
+                ,title			: getTitle("fanRunOn")
             	,multiple		: false
                 ,required		: true
                 ,type			: "enum"
@@ -201,14 +191,14 @@ def advanced(){
                 ,defaultValue	: "0"
             ) 
             if (state.etf){
-                input(
-                    name			: "pressureSwitch"
-                    ,title			: "Over pressure switch"
-                    ,multiple		: false
-                    ,required		: false
-                    ,type			: "capability.contactSensor"
-                    ,submitOnChange	: false
-                )				 
+            input(
+                name			: "pressureSwitch"
+                ,title			: getTitle("pressureSwitch")
+                ,multiple		: false
+                ,required		: false
+                ,type			: "capability.contactSensor"
+                ,submitOnChange	: true
+            )				 
             }
         }
     }
@@ -453,31 +443,28 @@ def setChildVents(vo){
 
 def managePressure(evt){
 	//"open" = OK/clear "closed" = no good baby...
-    
-    //check running state here
-    //def mainOn = state.mainState != "idle"
-
-	//pressure alert
-    if (evt.value == "closed"){
-    	//first instance...
- 		if (state.voBackoff == 0){
-            state.voBackoff = state.voBackoff + 5
-            log.warn "initial pressure alert!, opening vents to 100%, initial backOff set to ${state.voBackoff}%"
-        } else {
-			state.voBackoff = state.voBackoff + 5
-            log.warn "continued pressure alert!, opening vents to 100%, backOff set to ${state.voBackoff}%"
-        }
-        //setChildVents(100)
-    } else {
-         if (state.voBackoff == 0){
-         	log.info "initial alert cleared, trying with backOff set to ${state.voBackoff}%"
-         } else {
-         	log.info "alert cleared, trying again with backOff set to ${state.voBackoff}%"
-         }
-         //tell the zones to evaluate the new VO's
-         //pressureDataset = [msg:"pressureAlert",data:state.voBackoff]
-         //notifyZones([msg:"pressureAlert",data:state.voBackoff])
-         
+    def backOffRate = 5
+    if (state.mainState != "idle"){
+		//pressure alert
+    	if (evt.value == "closed"){
+    		state.voBackoff = state.voBackoff + 5
+    		//first instance...
+ 			if (state.voBackoff == backOffRate){
+            	logger(10,"warn","Initial pressure alert!, opening vents to 100%, initial backOff set to ${state.voBackoff}%")
+        	} else {
+            	logger(10,"warn","Continued pressure alert!, opening vents to 100%, backOff set to ${state.voBackoff}%")
+        	}
+        	setChildVents(100)
+    	} else {
+        	if (state.voBackoff == backOffRate){
+           		logger(10,"info","Initial alert cleared, trying with backOff at ${state.voBackoff}%")
+        	} else {
+        		logger(10,"info","Alert cleared, trying again with backOff at ${state.voBackoff}%")
+        	}
+        	//tell the zones to evaluate the new VO's
+        	//pressureDataset = [msg:"pressureAlert",data:state.voBackoff]
+    		notifyZones([msg:"pressureAlert",data:state.voBackoff])
+    	}
     }
 }
 
@@ -565,13 +552,38 @@ def isAC(){
 	return (settings.isACcapable == null || settings.isACcapable)
 }
 
-/*
-	//spit out some time testing...
-    def startTime = now() //epocMS, UTC
-    def startTimeLocal = startTime + location.timeZone.rawOffset //epocMS, Local TZ
-    def startTimeString = new Date(startTime).format("yyyy-MM-dd HH:mm")
-    def startTimeStringLocal = new Date(startTimeLocal).format("yyyy-MM-dd HH:mm")
-    log.info "times- startTime:${startTime} startTimeString:${startTimeString} startTimeLocal:${startTimeLocal} startTimeStringLocal:${startTimeStringLocal}"
+def hasPressure(){
+	return (settings.pressureSwitch) ?: false
+}
 
-
-*/
+def getTitle(name){
+	def title = ""
+	switch(name){
+        case "logLevelSummary" :
+        	title = "Log level is " + getLogLevel(settings.logLevel)
+        	break            
+        case "sendEventsToNotifications" :
+        	title = settings.sendEventsToNotifications ?  "Send Lite events to notification feed is [on]" : "Send Lite events to notification feed is [off]" 
+        	break   
+        case "sendEventsToNotificationsSummary" :
+        	title = settings.sendEventsToNotifications ?  "Notification feed is [on]" : "Notification feed is [off]" 
+        	break   
+		case "fanRunOn" :
+            title = 'Delay zone cycle end notification is '
+            if (!settings.fanRunOn || settings.fanRunOn == "0"){
+               	title = title + "[off]"
+            } else {
+               	title = title + "[on]"
+            }  			
+        	break  
+		case "pressureSwitch" :
+ 			title = settings.pressureSwitch ? "Over pressure contact:\n\twhen closed, pressure is over limit\n\twhen open, pressure is under limit " : "Optional over pressure contact"
+        	break  
+		case "pressureSwitchSummary" :
+        	if (hasPressure()){
+ 				title = settings.pressureSwitch ? "Over pressure contact: selected" : "Over pressure contact: not selected"
+            }
+        	break             
+	}
+    return title
+}
