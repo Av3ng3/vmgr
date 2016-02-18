@@ -1,6 +1,7 @@
 /**
- *  Keenect 1.1.0
+ *  Keenect 1.1.1
  	
+    2016-02-18	patch null in delay log notification
     2016-02-17	released pressure controls
  	2015-02-15	Developmental bits added for pressure control
  	2015-02-14 	Fix zone init NPE error on heat only
@@ -48,7 +49,7 @@ def updated() {
 
 def initialize() {
 	state.vParent = "1.1.0"
-	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e5' //5
+	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e4' //5
 	
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
     subscribe(tStat, "thermostatMode", checkNotify)
@@ -190,7 +191,6 @@ def advanced(){
                 ,submitOnChange	: true
                 ,defaultValue	: "0"
             ) 
-            if (state.etf){
             input(
                 name			: "pressureSwitch"
                 ,title			: getTitle("pressureSwitch")
@@ -199,7 +199,6 @@ def advanced(){
                 ,type			: "capability.contactSensor"
                 ,submitOnChange	: true
             )	
-            }
         }
     }
 }
@@ -390,7 +389,7 @@ def checkNotify(evt){
         	if (mainHSPChange) logger(10,"info","Main HVAC heating setpoint changed to: ${mainHSP}")
             state.dataSet = dataSet
             if (delay > 0){
-				logger(10,"info", "Zone notification is scheduled in ${delaySeconds} delay")
+				logger(10,"info", "Zone notification is scheduled in ${delay} delay")
 				runIn(delay,notifyZones)
         	} else {
         		notifyZones()
