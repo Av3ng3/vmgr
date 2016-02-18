@@ -1,6 +1,7 @@
 /**
- *  Keenect 1.0.2
- 
+ *  Keenect 1.1.0
+ 	
+    2016-02-17	released pressure controls
  	2015-02-15	Developmental bits added for pressure control
  	2015-02-14 	Fix zone init NPE error on heat only
   
@@ -46,7 +47,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vParent = "1.0.2"
+	state.vParent = "1.1.0"
 	state.etf = app.id == '07d1abe4-352f-441e-a6bd-681929b217e5' //5
 	
     //subscribe(tStat, "thermostatSetpoint", notifyZones) doesn't look like we need to use this
@@ -58,7 +59,6 @@ def initialize() {
     //tempSensors
     subscribe(tempSensors, "temperature", checkNotify)
     //pressure switch
-    //if (state.etf) 
     subscribe(pressureSwitch, "contact", managePressure)
 
 	//init state vars
@@ -132,7 +132,7 @@ def main(){
 					)                
                 }
                 def dev  = ""
-                 if (state.etf) dev = "\n(development instance)"
+                if (state.etf) dev = "\n(development instance)"
             	section (getVersionInfo() + dev) { }    
             }
 	}
@@ -198,7 +198,7 @@ def advanced(){
                 ,required		: false
                 ,type			: "capability.contactSensor"
                 ,submitOnChange	: true
-            )				 
+            )	
             }
         }
     }
@@ -234,11 +234,6 @@ def reporting(){
 					,state		: null
 					,params		: [rptName:report]
 				)  
-                /*
-                if (state.etf){
- 
-                }
-                */
             }
    }
 }
@@ -380,7 +375,6 @@ def checkNotify(evt){
     	//main end
         state.endTime = now() + location.timeZone.rawOffset
         state.endTemp = mainTemp
-        //maybe not set this here and use for reporting?, probably better to let the zones track it...
         state.voBackoff = 0
     }
     if (mainStateChange || mainModeChange || mainCSPChange || mainHSPChange){
@@ -427,6 +421,7 @@ def notifyZones(altDS){
     childApps.each {child ->
     	child.zoneEvaluate(dataSet)
     }
+    
     logger(40,"debug","notifyZones:exit- ")
 }
 
@@ -444,27 +439,23 @@ def setChildVents(vo){
 def managePressure(evt){
 	//"open" = OK/clear "closed" = no good baby...
     def backOffRate = 5
-    if (state.mainState != "idle"){
-		//pressure alert
-    	if (evt.value == "closed"){
-    		state.voBackoff = state.voBackoff + 5
-    		//first instance...
- 			if (state.voBackoff == backOffRate){
-            	logger(10,"warn","Initial pressure alert!, opening vents to 100%, initial backOff set to ${state.voBackoff}%")
-        	} else {
-            	logger(10,"warn","Continued pressure alert!, opening vents to 100%, backOff set to ${state.voBackoff}%")
-        	}
-        	setChildVents(100)
-    	} else {
-        	if (state.voBackoff == backOffRate){
-           		logger(10,"info","Initial alert cleared, trying with backOff at ${state.voBackoff}%")
-        	} else {
-        		logger(10,"info","Alert cleared, trying again with backOff at ${state.voBackoff}%")
-        	}
-        	//tell the zones to evaluate the new VO's
-        	//pressureDataset = [msg:"pressureAlert",data:state.voBackoff]
-    		notifyZones([msg:"pressureAlert",data:state.voBackoff])
-    	}
+	//pressure alert
+    if (evt.value == "closed"){
+    	state.voBackoff = state.voBackoff + 5
+    	//first instance...
+ 		if (state.voBackoff == backOffRate){
+           	logger(10,"warn","Initial pressure alert!, opening vents to 100%, initial backOff set to ${state.voBackoff}%")
+       	} else {
+           	logger(10,"warn","Continued pressure alert!, opening vents to 100%, backOff set to ${state.voBackoff}%")
+       	}
+       	setChildVents(100)
+    } else {
+       	if (state.voBackoff == backOffRate){
+       		logger(10,"info","Initial alert cleared, trying with backOff at ${state.voBackoff}%")
+       	} else {
+       		logger(10,"info","Alert cleared, trying again with backOff at ${state.voBackoff}%")
+       	}
+    	notifyZones([msg:"pressureAlert",data:state.voBackoff])
     }
 }
 
@@ -548,7 +539,6 @@ def getID(){
 }
 
 def isAC(){
-	//if isACcapable == null, or == true
 	return (settings.isACcapable == null || settings.isACcapable)
 }
 

@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.0.2
+ *  keenectZone 1.1.0
  	
+    2016-02-17	released pressure controls
     2016-02-15	developmental bits added for pressure control
     2016-02-04 	fixed NPE error on line 293
     2016-02-13 	re worked zone disable logic
@@ -46,7 +47,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.0.2"
+	state.vChild = "1.1.0"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -58,7 +59,7 @@ def initialize() {
 
 //dynamic page methods
 def main(){
-	state.etf = parent.getID()
+	//state.etf = parent.getID()
 	def installed = app.installationState == "COMPLETE"
 	return dynamicPage(
     	name		: "main"
@@ -182,11 +183,6 @@ def main(){
 					,state			: null
 				)
             }
-            /*
-            //if (state.etf){
-
-			//}
-            */
 	}
 }
 
@@ -301,18 +297,18 @@ def zoneEvaluate(params){
     	//back off adjustment here
         def backOff = parent.getBackoff()
         if (backOff > 0){
-			log.warn "Keenect says backoff VO's by: ${backOff}%"	
+            logger(10,"warn","Keenect says backoff vents by: ${backOff}%")
         	if (minVoLocal != 100 && (minVoLocal + backOff) < 100){
-            	log.info "backOff minVo- current settings: ${minVoLocal}, changed to: ${minVoLocal + backOff}"
+                logger(20,"info","zoneEvaluate- backOff minVo- current settings: ${minVoLocal}, changed to: ${minVoLocal + backOff}")
         		minVoLocal = minVoLocal + backOff
         	} else {
-        		log.info "backOff could not change minVo (it's already at 100%) ${minVoLocal}"
-        	}
+				logger(20,"info","zoneEvaluate- backOff could not change minVo (it's already at 100%)")
+			}
         	if (maxVoLocal != 100 && (maxVoLocal + backOff) < 100){
-            	log.info "backOff maxVo- current settings: ${maxVoLocal}, changed to: ${maxVoLocal + backOff}"
+                logger(20,"info","zoneEvaluate- backOff maxVo- current settings: ${maxVoLocal}, changed to: ${maxVoLocal + backOff}")
         		maxVoLocal = maxVoLocal + backOff
         	} else {
-        		log.info "backOff could not change maxVo (it's already at 100%) ${maxVoLocal}"
+                logger(20,"info","zoneEvaluate- backOff could not change maxVo (it's already at 100%)")
         	}
         }
     }
@@ -488,10 +484,6 @@ def zoneEvaluate(params){
 //event handlers
 def levelHandler(evt){
 	logger(40,"debug","levelHandler:enter- ")
-	//logger(30,"debug","levelHandler- evt name: ${evt.name}, value: ${evt.value}, rdLen: ${evt.description == ""}")
-    
-    //logger(40,"debug","id: ${evt.deviceId}, ventState: ${state."${evt.deviceId}"}")
-    
     def ventData = state."${evt.deviceId}"
     def v = evt.value.toFloat().round(0).toInteger()
     def t = evt.date.getTime()
@@ -508,7 +500,6 @@ def levelHandler(evt){
             ventData.voTTC = ((t - ventData.voRequestTS) / 1000).toFloat().round(1)
             logger(30,"debug","levelHandler- response vo: ${v} t: ${t} voTTC: ${ventData.voTTC}")
         }
-        //state."${evt.deviceId}" = ventData
     } else {
     	//request
     	if (evt.description == ""){
