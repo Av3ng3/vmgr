@@ -117,7 +117,7 @@ def main(){
             }        	
             if (installed){
                 section("Advanced"){
-                	def afDesc = "\t" + getTitle("logLevelSummary") + "\n\t" + getTitle("sendEventsToNotificationsSummary") + "\n\t" + getTitle("pressureSwitchSummary")
+                	def afDesc = "\t" + getTitle("logLevelSummary") + "\n\t" + getTitle("sendEventsToNotificationsSummary") + "\n\t" + getTitle("fanRunOn") + "\n\t" + getTitle("pressureSwitchSummary")
 					href( "advanced"
 						,title			: "" 
 						,description	: afDesc
@@ -317,7 +317,7 @@ def checkNotify(evt){
     def tempBool = false
     def isSetback = false
     def delay = 0
-    if (settings.fanRunOn) settings.fanRunOn.toInteger()
+    if (settings.fanRunOn) delay = settings.fanRunOn.toInteger()
     def mainTemp = tempSensors.currentValue("temperature").toFloat()
 	
     //thermostat state
