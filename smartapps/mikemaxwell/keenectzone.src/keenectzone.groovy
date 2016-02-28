@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.1.0
+ *  keenectZone 1.1.0a
  	
+    2016-02-27	restore existing vo on pressure clear when zone pressure control is disabled
     2016-02-17	released pressure controls
     2016-02-15	developmental bits added for pressure control
     2016-02-04 	fixed NPE error on line 293
@@ -47,7 +48,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.1.0"
+	state.vChild = "1.1.0a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -288,8 +289,6 @@ def zoneEvaluate(params){
     def minVoLocal = settings.minVo.toInteger() 
     def maxVoLocal = settings.maxVo.toInteger()
     
-    //def pEnabled = settings.pressureControl != false
-    
     def pEnabled = false
     try{ pEnabled = parent.hasPressure() }
     catch(e){} 
@@ -312,7 +311,7 @@ def zoneEvaluate(params){
         	}
         }
     }
-    
+   
     //set it here depending on zoneControlType
     def zoneCSPLocal 
     if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal = (mainCSPLocal + coolOffsetLocal)
@@ -410,8 +409,16 @@ def zoneEvaluate(params){
         	break
         case "pressureAlert" :
                	logger(30,"debug","zoneEvaluate- pressureAlert, data: ${data}")
-                log.warn "Pressure alert cleared, resetting zone VO's..."
-               	evaluateVents = true
+                //notifyZones([msg:"pressureAlert",data:state.voBackoff])
+                logger(10,"warn","Pressure alert cleared, resetting zone VO's...")
+				//if pressure is disabled locally, reset vents to previous vo
+                if (settings.pressureControl == false){
+                	if (state.lastVO != null){
+                    	setVents(state.lastVO)
+                    }
+                } else {
+                	evaluateVents = true
+                }
         	break
     }    
     
@@ -452,10 +459,12 @@ def zoneEvaluate(params){
        	if (mainStateLocal == "heat"){
         	state.activeSetPoint = zoneHSPLocal
        		if (zoneTempLocal >= zoneHSPLocal){
+            	state.lastVO = minVoLocal
            		slResult = setVents(minVoLocal)
              	logger(10,"info", "Zone temp is ${tempStr(zoneTempLocal)}, heating setpoint of ${tempStr(zoneHSPLocal)} is met${slResult}")
 				runningLocal = false
           	} else {
+            	state.lastVO = maxVoLocal
 				slResult = setVents(maxVoLocal)
 				logger(10,"info", "Zone temp is ${tempStr(zoneTempLocal)}, heating setpoint of ${tempStr(zoneHSPLocal)} is not met${slResult}")
 				runningLocal = true
@@ -463,10 +472,12 @@ def zoneEvaluate(params){
         } else if (mainStateLocal == "cool"){
         	state.activeSetPoint = zoneCSPLocal
        		if (zoneTempLocal <= zoneCSPLocal){
+            	state.lastVO = minVoLocal
 				slResult = setVents(minVoLocal)
                 logger(10,"info", "Zone temp is ${tempStr(zoneTempLocal)}, cooling setpoint of ${tempStr(zoneCSPLocal)} is met${slResult}")
                 runningLocal = false
        		} else {
+            	state.lastVO = maxVoLocal
 				slResult = setVents(maxVoLocal)
                 logger(10,"info", "Zone temp is ${tempStr(zoneTempLocal)}, cooling setpoint of ${tempStr(zoneCSPLocal)} is not met${slResult}")
                 runningLocal = true
@@ -601,10 +612,8 @@ def setVents(newVo){
     def result = ""
     def changeRequired = false
     
-	vents.each{ vent ->
+	settings.vents.each{ vent ->
     	def changeMe = false
-        def previousRequest
-        def previousActual
 		def crntVo = vent.currentValue("level").toInteger()
         def isOff = vent.currentValue("switch") == "off"
         /*
