@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.1.0a
- 	
+ *  keenectZone 1.1.0b
+ 
+ 	2016-02-28	fixed bug in setings Coolingoffset assignment to local variable 
     2016-02-27	restore existing vo on pressure clear when zone pressure control is disabled
     2016-02-17	released pressure controls
     2016-02-15	developmental bits added for pressure control
@@ -48,7 +49,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.1.0a"
+	state.vChild = "1.1.0b"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -281,7 +282,7 @@ def zoneEvaluate(params){
     //always fetch these since the zone ownes them
     def zoneTempLocal = tempSensors.currentValue("temperature").toFloat()
     def coolOffsetLocal 
-    if (settings.coolOffset) settings.coolOffset = settings.coolOffset.toInteger()
+    if (settings.coolOffset) coolOffsetLocal = settings.coolOffset.toInteger()
     def heatOffsetLocal = settings.heatOffset.toInteger()
     def zoneCloseOption = -1
     if (settings.ventCloseWait) zoneCloseOption = settings.ventCloseWait.toInteger()
