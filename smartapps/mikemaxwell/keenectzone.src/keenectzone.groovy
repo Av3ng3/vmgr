@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.1.0b
- 
+ *  keenectZone 1.1.0c
+ 	
+    2016-03-22	fixed configuration reporting bug for AC zone setpoints
  	2016-02-28	fixed bug in setings Coolingoffset assignment to local variable 
     2016-02-27	restore existing vo on pressure clear when zone pressure control is disabled
     2016-02-17	released pressure controls
@@ -49,7 +50,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.1.0b"
+	state.vChild = "1.1.0c"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -779,11 +780,11 @@ def getZoneConfig(){
     def cspStr = ""
     if (parent.isAC()){
         if (zoneControlType == "fixed") cspStr = "\n\tcooling set point: ${tempStr(settings.staticCSP)}"
-        else cspStr = "\n\tcooling offset: ${tempStr(state.mainCSP)}"
+        else cspStr = "\n\tcooling offset: ${tempStr(settings.coolOffset)}"
     }
     def hspStr = ""
-    if (zoneControlType == "fixed") hspStr = "heating set point: ${tempStr(staticHSP)}"
-    else hspStr = "heating offset: ${tempStr(heatOffset)}"
+    if (zoneControlType == "fixed") hspStr = "heating set point: ${tempStr(settings.staticHSP)}"
+    else hspStr = "heating offset: ${tempStr(settings.heatOffset)}"
     
     def zt = hspStr + cspStr
     if (zoneControlSwitch) zc = "is ${zoneControlSwitch.currentValue("switch")} via [${zoneControlSwitch.displayName}]"
