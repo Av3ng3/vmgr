@@ -1,6 +1,9 @@
 /**
- *  keenectZone 1.1.0c
+ *  keenectZone 1.2.0
  	
+    2016-04-02	Added vent obstruction auto clear bits
+    2016-04-01	Fixed bug "no data available" when cooling and offset set to 0
+    2016-03-27	Added optional support for seperate cooling VO's
     2016-03-22	fixed configuration reporting bug for AC zone setpoints
  	2016-02-28	fixed bug in setings Coolingoffset assignment to local variable 
     2016-02-27	restore existing vo on pressure clear when zone pressure control is disabled
@@ -9,7 +12,7 @@
     2016-02-04 	fixed NPE error on line 293
     2016-02-13 	re worked zone disable logic
 
- *  Copyright 2015 Mike Maxwell
+ *  Copyright 2016 Mike Maxwell
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -50,10 +53,11 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.1.0c"
+	state.vChild = "1.2.0"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
+    subscribe(vents, "switch", obstructionHandler)
     subscribe(zoneControlSwitch,"switch",zoneDisableHandeler)
     state.isAC = parent.isAC() //AC enable bits
    	fetchZoneControlState()
@@ -118,6 +122,27 @@ def main(){
                     	,options		: maxVoptions()
                     	,defaultValue	: "100"
                     	,submitOnChange	: true
+            		) 
+                }
+                if (parent.isAC()){
+					input(
+            			name			: "minVoC"
+                		,title			: "Optional minimum vent opening for cooling"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                    	,options		: minVoptions()
+                    	,submitOnChange	: true
+            		)   
+					input(
+            			name			: "maxVoC"
+                		,title			: "Optional maximum vent opening for cooling"
+                		,multiple		: false
+                		,required		: false
+                		,type			: "enum"
+                   		,options		: maxVoptions()
+                   		//,defaultValue	: "100"
+                   		,submitOnChange	: true
             		) 
                 }
                 input(
@@ -287,7 +312,7 @@ def zoneEvaluate(params){
     def heatOffsetLocal = settings.heatOffset.toInteger()
     def zoneCloseOption = -1
     if (settings.ventCloseWait) zoneCloseOption = settings.ventCloseWait.toInteger()
-    
+    /*
     def minVoLocal = settings.minVo.toInteger() 
     def maxVoLocal = settings.maxVo.toInteger()
     
@@ -313,7 +338,7 @@ def zoneEvaluate(params){
         	}
         }
     }
-   
+   	*/
     //set it here depending on zoneControlType
     def zoneCSPLocal 
     if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal = (mainCSPLocal + coolOffsetLocal)
@@ -366,11 +391,15 @@ def zoneEvaluate(params){
                 mainHSPLocal = data.mainHSP
                 mainCSPLocal = data.mainCSP
                 mainOnLocal = data.mainOn
+                
                 //set it again here, or rather ignore if type is fixed...
                 if (zoneControlType == "offset"){
-                    if (mainCSPLocal && coolOffsetLocal) zoneCSPLocal =  (mainCSPLocal + coolOffsetLocal)
+                    if (mainCSPLocal != null && coolOffsetLocal != null) zoneCSPLocal =  (mainCSPLocal + coolOffsetLocal)
                 	zoneHSPLocal = mainHSPLocal + heatOffsetLocal
                 }
+                //log.warn "main set points- mainHSPLocal: ${mainHSPLocal}, mainCSPLocal: ${mainCSPLocal}"
+                //log.warn "zone set points- zoneHSPLocal: ${zoneHSPLocal}, zoneCSPLocal: ${zoneCSPLocal}"
+                
         	break
         case "temp" :
                 if (!zoneDisabledLocal){
@@ -423,6 +452,38 @@ def zoneEvaluate(params){
                 }
         	break
     }    
+    
+    def minVoLocal = settings.minVo.toInteger() 
+    def maxVoLocal = settings.maxVo.toInteger()
+    if (parent.isAC() && mainStateLocal == "cool"){
+        if (minVoC) minVoLocal = settings.minVoC.toInteger()
+        if (maxVoC) maxVoLocal = settings.maxVoC.toInteger()
+    }
+    
+    def pEnabled = false
+    try{ pEnabled = parent.hasPressure() }
+    catch(e){} 
+    if (pEnabled && settings.pressureControl != false){
+    	//back off adjustment here
+        def backOff = parent.getBackoff()
+        if (backOff > 0){
+            logger(10,"warn","Keenect says backoff vents by: ${backOff}%")
+        	if (minVoLocal != 100 && (minVoLocal + backOff) < 100){
+                logger(20,"info","zoneEvaluate- backOff minVo- current settings: ${minVoLocal}, changed to: ${minVoLocal + backOff}")
+        		minVoLocal = minVoLocal + backOff
+        	} else {
+				logger(20,"info","zoneEvaluate- backOff could not change minVo (it's already at 100%)")
+			}
+        	if (maxVoLocal != 100 && (maxVoLocal + backOff) < 100){
+                logger(20,"info","zoneEvaluate- backOff maxVo- current settings: ${maxVoLocal}, changed to: ${maxVoLocal + backOff}")
+        		maxVoLocal = maxVoLocal + backOff
+        	} else {
+                logger(20,"info","zoneEvaluate- backOff could not change maxVo (it's already at 100%)")
+        	}
+        }
+    }
+
+    
     
     //always check for main quick  quickRecoveryActive
     def tempBool = false
@@ -495,6 +556,20 @@ def zoneEvaluate(params){
 }
 
 //event handlers
+def obstructionHandler(evt){
+	if (evt.value == "obstructed"){
+        def vent = vents.find{it.id == evt.deviceId}
+        logger(10,"warn", "Attempting to clear vent obstruction on: [${vent.displayName}]")
+        vent.clearObstruction()
+    }
+
+	/*
+      name: "switch",
+      value: "obstructed",
+      call: device.clearObstruction
+    */
+}
+
 def levelHandler(evt){
 	logger(40,"debug","levelHandler:enter- ")
     def ventData = state."${evt.deviceId}"
