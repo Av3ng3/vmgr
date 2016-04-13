@@ -1,6 +1,7 @@
 /**
- *  keenectZone 1.2.0
+ *  keenectZone 1.2.0a
  	
+    2016-04-12	Fixed NPE init error on ac enabled fresh installs
     2016-04-02	Added vent obstruction auto clear bits
     2016-04-01	Fixed bug "no data available" when cooling and offset set to 0
     2016-03-27	Added optional support for seperate cooling VO's
@@ -53,7 +54,7 @@ def updated() {
 }
 
 def initialize() {
-	state.vChild = "1.2.0"
+	state.vChild = "1.2.0a"
     parent.updateVer(state.vChild)
     subscribe(tempSensors, "temperature", tempHandler)
     subscribe(vents, "level", levelHandler)
@@ -133,17 +134,19 @@ def main(){
                 		,type			: "enum"
                     	,options		: minVoptions()
                     	,submitOnChange	: true
-            		)   
-					input(
-            			name			: "maxVoC"
-                		,title			: "Optional maximum vent opening for cooling"
-                		,multiple		: false
-                		,required		: false
-                		,type			: "enum"
-                   		,options		: maxVoptions()
-                   		//,defaultValue	: "100"
-                   		,submitOnChange	: true
             		) 
+                    if (minVoC) {
+						input(
+            				name			: "maxVoC"
+                			,title			: "Optional maximum vent opening for cooling"
+                			,multiple		: false
+                			,required		: false
+                			,type			: "enum"
+                   			,options		: maxVCoptions()
+                   			//,defaultValue	: "100"
+                   			,submitOnChange	: true
+            			) 
+                    }
                 }
                 input(
                 	name			: "zoneControlType"
@@ -789,6 +792,16 @@ def getTitle(name){
 
 def minVoptions(){
 	return [["0":"Fully closed"],["5":"5%"],["10":"10%"],["15":"15%"],["20":"20%"],["25":"25%"],["30":"30%"],["35":"35%"],["40":"40%"],["45":"45%"],["50":"50%"],["55":"55%"],["60":"60%"]]
+}
+
+def maxVCoptions(){
+	def opts = []
+    def start = minVoC.toInteger() + 5
+    start.step 95, 5, {
+   		opts.push(["${it}":"${it}%"])
+	}
+    opts.push(["100":"Fully open"])
+    return opts
 }
 
 def maxVoptions(){
